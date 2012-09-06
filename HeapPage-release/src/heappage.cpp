@@ -17,7 +17,12 @@ using namespace std;
 //------------------------------------------------------------------
 void HeapPage::Init(PageID pageNo)
 {
-	//TODO: add your code here
+	//kfc35 has initialized these variables based on
+	//what is in heappage.h
+	pid = pageNo; //set the pageID of this page to the arg.
+	numOfSlots = 0; //page is initialized with no slots
+	freePtr = HEAPPAGE_DATA_SIZE; //pointer is at the END of the page
+	freeSpace = HEAPPAGE_DATA_SIZE; //at beginning, page is empty
 }
 
 //------------------------------------------------------------------
@@ -34,7 +39,7 @@ void HeapPage::SetNextPage(PageID pageNo)
 }
 
 //------------------------------------------------------------------
-// HeapPage::SetNextPage
+// HeapPage::SetPrevPage
 //
 // Input    : The PageID for previous page.
 // Output   : None.
@@ -94,8 +99,10 @@ PageID HeapPage::PageNo()
 // Return   : The pointer to the requested slot.
 //------------------------------------------------------------------
 HeapPage::Slot* HeapPage::GetSlotAtIndex(int slotNumber) {
-	// TODO : Add your code here.
-	return NULL;
+	if (slotNumber > (numOfSlots - 1)) {
+		return NULL;
+	}
+	return (Slot *)(&data[slotNumber * sizeof(Slot);
 }
 
 //------------------------------------------------------------------
