@@ -17,10 +17,10 @@ using namespace std;
 //------------------------------------------------------------------
 void HeapPage::Init(PageID pageNo)
 {
-	//kfc35 has initialized these variables based on
-	//what is in heappage.h
-	pid = pageNo; //set the pageID of this page to the arg.
+	nextPage = INVALID_PAGE;
+	prevPage = INVALID_PAGE;
 	numOfSlots = 0; //page is initialized with no slots
+	pid = pageNo; //set the pageID of this page to the arg.
 	freePtr = HEAPPAGE_DATA_SIZE; //pointer is at the END of the page
 	freeSpace = HEAPPAGE_DATA_SIZE; //at beginning, page is empty
 }
@@ -98,11 +98,11 @@ PageID HeapPage::PageNo()
 // Purpose  : Get the pointer to the slot at the given slot number in the slot directory.
 // Return   : The pointer to the requested slot.
 //------------------------------------------------------------------
-HeapPage::Slot* HeapPage::GetSlotAtIndex(int slotNumber) {
-	if (slotNumber > (numOfSlots - 1)) {
+HeapPage::Slot* HeapPage::GetSlotAtIndex(int slotNumber) { //slot numbers are 1...n
+	if (slotNumber > (numOfSlots)) {
 		return NULL;
 	}
-	return (Slot *)(&data[slotNumber * sizeof(Slot);
+	return (Slot *)(&data[(slotNumber - 1) * sizeof(Slot)]); //array slots are addressed 0 ... n-1
 }
 
 //------------------------------------------------------------------
@@ -113,8 +113,18 @@ HeapPage::Slot* HeapPage::GetSlotAtIndex(int slotNumber) {
 // Return   : The size of the contiguous free space region.
 //------------------------------------------------------------------
 int HeapPage::GetContiguousFreeSpaceSize() {
-	// TODO : Add your code here.
-	return -1;
+	int contigFreeSpaceBeginning = numOfSlots * sizeof(Slot);
+	/*Since slot offsets can point anywhere within the data, we must scan the whole directory
+	  for the earliest offset, as this will be the end of the contiguous free region.*/
+	int contigFreeSpaceEnding = HEAPPAGE_DATA_SIZE;
+	for (int i = 0; i <= numOfSlots - 1; i++) {
+		//if the offset of the current slot is before the currently marked end of the contig free space
+		if ((((Slot *)(&data[i * sizeof(Slot)])) -> offset) < contigFreeSpaceEnding) {
+			contigFreeSpaceEnding = (((Slot *)(&data[i * sizeof(Slot)])) -> offset);
+		}
+	}
+	return contigFreeSpaceEnding - contigFreeSpaceBeginning; 
+	//could also do (freeSpace - (HEAPPAGE_DATA_SIZE - contigFreeSpaceEnding))
 }
 
 //------------------------------------------------------------------
@@ -126,8 +136,17 @@ int HeapPage::GetContiguousFreeSpaceSize() {
 // Return   : A pointer to the slot appended by the function.
 //------------------------------------------------------------------
 HeapPage::Slot* HeapPage::AppendNewSlot(){
-	// TODO : Add your code here.
-	return NULL;
+	/*First, check that there's space for it.*/
+	if (GetContiguousFreeSpaceSize() < sizeof(Slot)) {
+		return NULL;
+	}
+	else {
+		//the next slot is at numOfSlots (slots are indexed 0... n-1 in the array)
+		Slot *newSlot = (Slot *)(&data[numOfSlots * sizeof(Slot)]);
+		numOfSlots++;
+		freeSpace -= sizeof(Slot);
+		return newSlot;
+	}
 }
 
 //------------------------------------------------------------------
@@ -138,9 +157,56 @@ HeapPage::Slot* HeapPage::AppendNewSlot(){
 // Purpose   : To reclaim the free space in the page left as holes after deletion.
 // Return    : OK if everything went OK, FAIL otherwise.
 //------------------------------------------------------------------
-Status HeapPage::CompressPage() {	
-	//TODO: add your code here
-	return FAIL;
+Status HeapPage::CompressPage() {
+	//Record offsets are -1 if there was a deleted
+	//memmov
+	// Order all the slots by offset. Then move slots down as necessary.
+
+	Slot *currentSlot; //current slot to shift right for compression.
+	int compressedOffset = HEAPPAGE_DATA_SIZE; //everything after this offset has been compressed
+	int largestOffsetUncompressed; //largest offset of the slot in the uncompressed region.
+
+	/*Must verify all slots are compressed*/
+	for (int i = 0; i <= numOfSlots - 1; i++) {
+
+		/*Find the next slot to work on compressing towards the right.
+		 *The next slot to work on is the slot which has the largest offset in the uncompresed data region 
+		  (we moved all records past 'compressedOffset' already)*/
+		bool noCompressionNeeded = false;
+		currentSlot = NULL;
+		largestOffsetUncompressed = 0;
+		for (int j = 0; j <= numOfSlots - 1; j++) {
+			Slot *slot = (Slot *) &(data[j * sizeof(slot)]);
+			if ((slot -> offset) >= largestOffsetUncompressed && (slot -> offset) < compressedOffset) {
+				//Check if the slot actually needs moving.
+				if ((slot -> offset) + (slot -> length) == compressedOffset) {
+					noCompressionNeeded = true;
+					//since the slot is already compressed, update the compressedOffset
+					compressedOffset = slot -> offset;
+					break;
+				}
+				else {
+					largestOffsetUncompressed = slot -> offset;
+					currentSlot = slot;
+				}
+			}
+		}
+		// if there's no shift needed, continue to find the next slot that may need compression.
+		if (noCompressionNeeded == true) {
+			continue;
+		}
+		// If there are only slots with offset = INVALID_SLOT, the currentSlot will be null.
+		// (the inner loop never sets currentSlot, since largestOffsetUncompressed is initialized to 0 > INVALID_SLOT)
+		// break because there are no more valid records to compress
+		if (currentSlot == NULL) {
+			break;
+		}
+		// else, we must move the memory and update the slot offset.
+		memmove(&data[compressedOffset - (currentSlot->length)], &data[currentSlot->offset], currentSlot->length);
+		currentSlot->offset = compressedOffset - (currentSlot->length);
+	}
+	//TODO when can this fail?
+	return OK;
 }
 
 //------------------------------------------------------------------
@@ -237,7 +303,14 @@ Status HeapPage::ReturnRecord(RecordID rid, char*& recPtr, int& length)
 //------------------------------------------------------------------
 int HeapPage::AvailableSpace(void)
 {
-	return freeSpace;
+	//If there are no empty slots, return freeSpace - sizeof(slot), since the slot will be
+	//used for an upcoming record.
+	for (int i = 0; i <= numOfSlots - 1; i++) {
+		if (((Slot *)(&data[i * sizeof(Slot)])) -> offset == INVALID_SLOT) {
+			return freeSpace;
+		}
+	}
+	return freeSpace - sizeof(Slot);
 }
 
 //------------------------------------------------------------------
@@ -250,7 +323,12 @@ int HeapPage::AvailableSpace(void)
 //------------------------------------------------------------------
 bool HeapPage::IsEmpty(void)
 {
-	//TODO: add your code here
+	/*Scan the slots. If there is a valid record, return false. Otherwise, true*/
+	for (int i = 0; i <= numOfSlots - 1; i++) {
+		if (((Slot *)(&data[i * sizeof(Slot)])) -> offset != INVALID_SLOT) {
+			return false;
+		}
+	}
 	return true;
 }
 
@@ -264,6 +342,12 @@ bool HeapPage::IsEmpty(void)
 //------------------------------------------------------------------
 int HeapPage::GetNumOfRecords()
 {
-	//TODO: add your code here
-	return -1;
+	int numOfRecords = 0;
+	/*Scan the slots to see if the record is valid. If valid, inc numRecords.*/
+	for (int i = 0; i <= numOfSlots - 1; i++) {
+		if (((Slot *)(&data[i * sizeof(Slot)])) -> offset != INVALID_SLOT) {
+			numOfRecords++;
+		}
+	}
+	return numOfRecords;
 }
