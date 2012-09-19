@@ -217,10 +217,51 @@ Status HeapPage::CompressPage() {
 // Purpose   : Insert a record into the page
 // Return    : OK if everything went OK, DONE if sufficient space is not available.
 //------------------------------------------------------------------
-Status HeapPage::InsertRecord(const char *recPtr, int length, RecordID& rid)
-{
-	//TODO: add your code here
-	return FAIL;
+Status HeapPage::InsertRecord(const char *recPtr, int length, RecordID& rid) {
+	
+	// check if there are slots left
+	bool slot_avail = false;
+	Slot* slot;
+	for (int i = 0; i < numOfSlots; i++) {
+		slot = (Slot *) &(data[i * sizeof(slot)]);
+		if (slot->length == INVALID_SLOT) { // TODO: is this check sufficient?
+			slot_avail = true;
+			break;
+		}
+	}
+
+	// check for available space
+	int spaceNeeded;
+	if (slot_avail) {
+		spaceNeeded = length;
+	} else {
+		spaceNeeded = length + sizeof(Slot);
+	}
+	if (GetContiguousFreeSpaceSize() < spaceNeeded) {
+		if (CompressPage() != OK) {
+			return DONE;
+		}
+		if (GetContiguousFreeSpaceSize() < spaceNeeded) {
+			return DONE;
+		}
+	}
+
+	// copying record into data array
+	memcpy(&data[freePtr-length], recPtr, length);
+
+	// insert slot
+	if (!slot_avail) {
+		slot = AppendNewSlot();
+	}
+	slot->offset = freePtr-length;
+	slot->length = length;
+
+	freePtr -= length;
+	freeSpace -= spaceNeeded;
+
+	rid.pageNo=pid;
+	//rid.slotNo = 
+	return OK;
 }
 
 //------------------------------------------------------------------
