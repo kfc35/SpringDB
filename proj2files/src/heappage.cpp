@@ -221,8 +221,8 @@ Status HeapPage::CompressPage() {
 	Slot **slotDir;
 	slotDir = new Slot *[numOfSlots];
 	/*Initialize slotDir. O(n)*/
-	for (int i = 1; i <= numOfSlots; i++) {
-		slotDir[i-1] = GetSlotAtIndex(i);
+	for (int i = 0; i < numOfSlots; i++) {
+		slotDir[i] = GetSlotAtIndex(i);
 	}
 	Slot **sortedDir = SortSlotDirectory(slotDir, 0, numOfSlots - 1); //Worst Case: O(n log n)
 	delete [] slotDir;
@@ -301,13 +301,13 @@ Status HeapPage::CompressPage() {
 //------------------------------------------------------------------
 Status HeapPage::InsertRecord(const char *recPtr, int length, RecordID& rid) {
 	// check if there are slots left
-	bool slot_avail = false;
+	bool slotAvail = false;
 	Slot* slot;
 	int slotNum;
 	for (int i = 0; i < numOfSlots; i++) {
 		slot = GetSlotAtIndex(i);
 		if (slot->length == INVALID_SLOT) {
-			slot_avail = true;
+			slotAvail = true;
 			slotNum = i;
 			break;
 		}
@@ -315,7 +315,7 @@ Status HeapPage::InsertRecord(const char *recPtr, int length, RecordID& rid) {
 
 	// check for available space
 	int spaceNeeded = length;
-	if (!slot_avail) {
+	if (!slotAvail) {
 		spaceNeeded += sizeof(Slot);
 	}
 	if (freeSpace < spaceNeeded) {
@@ -331,7 +331,7 @@ Status HeapPage::InsertRecord(const char *recPtr, int length, RecordID& rid) {
 	memcpy(&data[freePtr-length], recPtr, length);
 
 	// insert slot
-	if (!slot_avail) {
+	if (!slotAvail) {
 		slot = AppendNewSlot();
 		slotNum = numOfSlots-1;
 	}
@@ -348,6 +348,21 @@ Status HeapPage::InsertRecord(const char *recPtr, int length, RecordID& rid) {
 	return OK;
 }
 
+bool HeapPage::CheckRecordValidity(RecordID rid) {
+	// check if rid is valid
+	if (rid.pageNo != pid) {
+		return false;
+	}
+	if (rid.slotNo >= numOfSlots || rid.slotNo < 0) {
+		return false;
+	}
+	Slot* slot = GetSlotAtIndex(rid.slotNo);
+	if (slot->length == INVALID_SLOT) {
+		return false;
+	}
+	return true;
+}
+
 //------------------------------------------------------------------
 // HeapPage::DeleteRecord 
 //
@@ -358,17 +373,11 @@ Status HeapPage::InsertRecord(const char *recPtr, int length, RecordID& rid) {
 //------------------------------------------------------------------ 
 Status HeapPage::DeleteRecord(RecordID rid) {
 	// check if rid is valid
-	if (rid.pageNo != pid) {
-		return FAIL;
-	}
-	if (rid.slotNo >= numOfSlots || rid.slotNo < 0) {
-		return FAIL;
-	}
-	Slot* slot = GetSlotAtIndex(rid.slotNo);
-	if (slot->length == INVALID_SLOT) {
+	if (!CheckRecordValidity(rid)) {
 		return FAIL;
 	}
 
+	Slot* slot = GetSlotAtIndex(rid.slotNo);
 	freeSpace += slot->length;
 	slot->length = INVALID_SLOT;
 
@@ -387,10 +396,21 @@ Status HeapPage::DeleteRecord(RecordID rid) {
 // Purpose  : To find the first record on a page
 // Return   : OK if successful, DONE otherwise
 //------------------------------------------------------------------
-Status HeapPage::FirstRecord(RecordID& rid)
-{
-	//TODO: add your code here
-	return FAIL;
+Status HeapPage::FirstRecord(RecordID& rid) {
+	if (IsEmpty()) return DONE;
+
+	short max_offset = 0;
+	int first_slot_no;
+	for (int i = 0; i < numOfSlots; i++) {
+		Slot* slot = GetSlotAtIndex(i);
+		if (slot->offset > max_offset) {
+			max_offset = slot->offset;
+			first_slot_no = i;
+		}
+	}
+	rid.pageNo = pid;
+	rid.slotNo = first_slot_no;
+	return OK;
 }
 
 //------------------------------------------------------------------
@@ -401,10 +421,29 @@ Status HeapPage::FirstRecord(RecordID& rid)
 // Return   : Return DONE if no more records exist on the page; 
 //            otherwise OK
 //------------------------------------------------------------------
-Status HeapPage::NextRecord (RecordID curRid, RecordID& nextRid)
-{
-	//TODO: add your code here
-	return FAIL;
+Status HeapPage::NextRecord (RecordID curRid, RecordID& nextRid) {
+	if (!CheckRecordValidity(curRid)) {
+		return FAIL;
+	}
+
+	Slot* curSlot = GetSlotAtIndex(curRid.slotNo);
+	if (curSlot->offset == freePtr) {
+		return DONE;
+	}
+
+	int next_slot_no;
+	short max_offset = 0;
+	for (int i = 0; i< numOfSlots; i++) {
+		Slot* slot = GetSlotAtIndex(i);
+		if (slot->offset < curSlot->offset && slot->offset > max_offset) {
+			// largest offset that's smaller than curSlot's record offset
+			max_offset = slot->offset;
+			next_slot_no = i;
+		}
+	}
+	nextRid.pageNo = pid;
+	nextRid.slotNo = next_slot_no;
+	return OK;
 }
 
 //------------------------------------------------------------------
@@ -415,10 +454,19 @@ Status HeapPage::NextRecord (RecordID curRid, RecordID& nextRid)
 // Purpose  : To retrieve a _copy_ of a record with ID rid from a page
 // Return   : OK if successful, FAIL otherwise
 //------------------------------------------------------------------
-Status HeapPage::GetRecord(RecordID rid, char *recPtr, int& length)
-{
-	//TODO: add your code here
-	return FAIL;
+Status HeapPage::GetRecord(RecordID rid, char *recPtr, int& length) {
+	if (!CheckRecordValidity(rid)) {
+		return FAIL;
+	}
+
+	Slot* slot = GetSlotAtIndex(rid.slotNo);
+	if (slot->length > length) { // TODO: length might be a pointer?
+		return FAIL;
+	}
+
+	memcpy(recPtr, &data[slot->offset], slot->length);
+	length = slot->length;
+	return OK;
 }
 
 //------------------------------------------------------------------
@@ -429,10 +477,15 @@ Status HeapPage::GetRecord(RecordID rid, char *recPtr, int& length)
 // Purpose  : To output a _pointer_ to the record
 // Return   : OK if successful, FAIL otherwise
 //------------------------------------------------------------------
-Status HeapPage::ReturnRecord(RecordID rid, char*& recPtr, int& length)
-{	
-	//TODO: add your code here
-	return FAIL;
+Status HeapPage::ReturnRecord(RecordID rid, char*& recPtr, int& length) {	
+	if (!CheckRecordValidity(rid)) {
+		return FAIL;
+	}
+
+	Slot* slot = GetSlotAtIndex(rid.slotNo);
+	recPtr = &data[slot->offset];
+	length = slot->length;
+	return OK;
 }
 
 //------------------------------------------------------------------
