@@ -61,6 +61,9 @@ protected :
 	// Appends a new slot to the end of the slot directory.
 	Slot* AppendNewSlot();
 
+	// sorts the slot ordered by slot->offset
+	Slot** SortSlotDirectory(Slot** slotDir, int begin, int end);
+
 public:
 	// Inialize the page with given PageID.
 	void Init(PageID pageNo);
