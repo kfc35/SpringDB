@@ -64,6 +64,9 @@ protected :
 	// sorts the slot ordered by slot->offset
 	Slot** SortSlotDirectory(Slot** slotDir, int begin, int end);
 
+	// Checks if the record given by rid is a valid record on the page
+	bool CheckRecordValidity(RecordID rid);
+
 public:
 	// Inialize the page with given PageID.
 	void Init(PageID pageNo);
