@@ -254,7 +254,6 @@ bool HeapFileDriver::Test2()
 		if (status != OK)
 			cerr << "*** Error opening scan\n";
 	}
-
 	//	Check the remaining records
 	if ( status == OK )
 	{

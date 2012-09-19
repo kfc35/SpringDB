@@ -58,7 +58,7 @@ bool HeapPageDriver::Test1()
 	HeapPage hp;
 	hp.Init(0);
 
-	ASSERT(hp.AvailableSpace() == HEAPPAGE_DATA_SIZE);
+	ASSERT(hp.AvailableSpace() == HEAPPAGE_DATA_SIZE - SlotSize);
 
 	char rec[5] = "abcd";
 	const int RecordLen = 5;
@@ -68,7 +68,7 @@ bool HeapPageDriver::Test1()
 		ASSERT(hp.InsertRecord(rec, RecordLen, recordIds[i]) == OK);
 	}
 
-	ASSERT(hp.AvailableSpace() == HEAPPAGE_DATA_SIZE - SlotSize * 100 - RecordLen * 100);
+	ASSERT(hp.AvailableSpace() == HEAPPAGE_DATA_SIZE - SlotSize * 101 - RecordLen * 100);
 
 	// Delete all even records
 	for (int i = 0; i < 100; i++) {
@@ -88,7 +88,7 @@ bool HeapPageDriver::Test1()
 		prevRecId = recId;
 	}
 
-	ASSERT(hp.AvailableSpace() == 8);
+	ASSERT(hp.AvailableSpace() == 4);
 	ASSERT(hp.GetNumOfRecords() == 452);
 	return true;
 }
