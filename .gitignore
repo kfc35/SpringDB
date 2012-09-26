@@ -1,0 +1,8 @@
+*.DS_Store
+*.opensdf
+*.sdf
+*.sln
+*.vcxproj
+*.vcxproj.filters
+
+proj3files/B+Tree/lib
