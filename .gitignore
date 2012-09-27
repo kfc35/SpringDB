@@ -4,5 +4,6 @@
 *.sln
 *.vcxproj
 *.vcxproj.filters
+*.suo
 
 proj3files/B+\ Tree/lib
