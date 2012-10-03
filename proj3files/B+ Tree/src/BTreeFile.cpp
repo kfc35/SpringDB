@@ -22,8 +22,39 @@
 //-------------------------------------------------------------------
 BTreeFile::BTreeFile(Status &returnStatus, const char *filename)
 {
-	// TODO: Add your code here.
-	header = NULL;
+	PageID start_pg = INVALID_PAGE;
+	Page *headerPage;
+	if (MINIBASE_DB->GetFileEntry(filename, start_pg) == OK) {
+		//index does exist in the database.
+		//start_pg is PageID of header page. Open and Pin it.
+		if (MINIBASE_BM->PinPage(start_pg, headerPage) == OK) { 
+			//I assume headerPage points to a valid page after this
+			header = (BTreeHeaderPage *)headerPage;
+			returnStatus = OK;
+		}
+		else {
+			returnStatus = FAIL;
+		}
+	}
+	else { //index does not exist in the database
+		if (MINIBASE_DB->AllocatePage(start_pg) == OK) { //allocate page for header
+			//Open and pin the new header page for the B+ Tree (it is an empty page)
+			if (MINIBASE_BM->PinPage(start_pg, headerPage, true) == OK) {
+				//I assume headerPage points to a valid page after this
+				header = (BTreeHeaderPage *)headerPage;
+				header->Init(start_pg);
+
+				returnStatus = MINIBASE_DB->AddFileEntry(filename, start_pg);
+			}
+			else {
+				returnStatus = FAIL;
+			}
+		}
+		else { //The DB failed to allocate new page for the header
+			//TODO ensure that AllocatePage returns OK on success... it could return DONE instead.
+			returnStatus = FAIL;
+		}
+	}
 }
 
 
