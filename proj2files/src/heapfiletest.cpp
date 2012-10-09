@@ -254,7 +254,6 @@ bool HeapFileDriver::Test2()
 		if (status != OK)
 			cerr << "*** Error opening scan\n";
 	}
-
 	//	Check the remaining records
 	if ( status == OK )
 	{
@@ -263,12 +262,15 @@ bool HeapFileDriver::Test2()
 
 		//	State the length of allocated memory
 		len = sizeof(rec);
+		cout << "Before get next";
 		while ( (status = scan->GetNext(rid, (char *)&rec, len)) == OK )
 		{
 			//	Check retrieved record
 			if( rec.ival != i  ||
 				rec.fval != i*2.5 )
 			{
+				cout << "*** Record " << i << " differs from what we "
+					"inserted\n";
 				cerr << "*** Record " << i << " differs from what we "
 					"inserted\n";
 				status = FAIL;
@@ -277,6 +279,7 @@ bool HeapFileDriver::Test2()
 			i += 2; // Because we deleted the odd ones
 			len = sizeof(rec);
 		}
+		cout << "After get next";
 
 		if ( status == DONE )
 			status = OK;

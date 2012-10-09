@@ -132,9 +132,9 @@ HeapPage::Slot* HeapPage::AppendNewSlot(){
 		return NULL;
 	}
 	else {
-		Slot *newSlot = GetSlotAtIndex(numOfSlots);
 		numOfSlots++;
-		freeSpace -= sizeof(Slot);
+		Slot *newSlot = GetSlotAtIndex(numOfSlots - 1); //the new slot is located at n-1.
+		//freeSpace -= sizeof(Slot);
 		return newSlot;
 	}
 }
@@ -167,11 +167,13 @@ HeapPage::Slot** HeapPage::SortSlotDirectory(Slot** slotDir, int begin, int end)
 		Slot** sortedSides;
 		sortedSides = new Slot *[(end - begin + 1) * sizeof(Slot *)];
 
-		int pointerLeft = begin;
-		int pointerRight = rightBegin;
+		int pointerLeft = 0;
+		int pointerRight = 0;
+		int leftSideLength = (leftEnd - begin) + 1;
+		int rightSideLength = (end - rightBegin) + 1;
 		int sortedIndex = 0;
 		//choose the largest between the two and place it first.
-		while (pointerLeft <= leftEnd && pointerRight <= end) {
+		while (pointerLeft < leftSideLength && pointerRight < rightSideLength) {
 			if (leftSide[pointerLeft] -> offset >= rightSide[pointerRight] -> offset) {
 				sortedSides[sortedIndex] = leftSide[pointerLeft];
 				sortedIndex++;
@@ -185,14 +187,14 @@ HeapPage::Slot** HeapPage::SortSlotDirectory(Slot** slotDir, int begin, int end)
 		}
 		//If one array is all in the sorted away, put the rest of the entries in the other array
 		//into the sorted array.
-		if (pointerLeft <= leftEnd) {
-			for (int i = pointerLeft; i <= leftEnd; i++) {
+		if (pointerLeft < leftSideLength) {
+			for (int i = pointerLeft; i < leftSideLength; i++) {
 				sortedSides[sortedIndex] = leftSide[pointerLeft];
 				sortedIndex++;
 			}
 		}
-		if (pointerRight <= end) {
-			for (int i = pointerRight; i <= end; i++) {
+		if (pointerRight < rightSideLength) {
+			for (int i = pointerRight; i < rightSideLength; i++) {
 				sortedSides[sortedIndex] = rightSide[pointerRight];
 				sortedIndex++;
 			}
@@ -221,7 +223,7 @@ Status HeapPage::CompressPage() {
 	Slot **slotDir;
 	slotDir = new Slot *[numOfSlots];
 	/*Initialize slotDir. O(n)*/
-	for (int i = 0; i < numOfSlots; i++) {
+	for (int i = 0; i <= numOfSlots - 1; i++) {
 		slotDir[i] = GetSlotAtIndex(i);
 	}
 	Slot **sortedDir = SortSlotDirectory(slotDir, 0, numOfSlots - 1); //Worst Case: O(n log n)
@@ -231,9 +233,8 @@ Status HeapPage::CompressPage() {
 	Slot *currentSlot; //current slot to shift right and compress
 	for (int i = 0; i <= numOfSlots - 1; i++) { //O(n)
 		currentSlot = sortedDir[i];
-		if (currentSlot->offset == INVALID_SLOT) {
-			//we are done dealing with valid slots
-			break;
+		if (SlotIsEmpty(currentSlot)) {
+			continue; //slot does not need shifting.
 		}
 		if (currentSlot->offset + currentSlot->length != compressedOffset) {
 			memmove(&data[compressedOffset - currentSlot->length], &data[currentSlot->offset], currentSlot->length);
@@ -243,52 +244,7 @@ Status HeapPage::CompressPage() {
 	freePtr = compressedOffset;
 	delete [] sortedDir;
 	return OK;
-
-	//TODO go through sorted directory and shift. O(n)
-
-	/*Must verify all slots are compressed*/
-	/**
-	for (int i = 0; i <= numOfSlots - 1; i++) {
-
-		/*Find the next slot to work on compressing towards the right.
-		 *The next slot to work on is the slot which has the largest offset in the uncompresed data region 
-		  (we moved all records past 'compressedOffset' already)
-		bool noCompressionNeeded = false;
-		currentSlot = NULL;
-		largestOffsetUncompressed = 0;
-		for (int j = 0; j <= numOfSlots - 1; j++) {
-			Slot *slot = (Slot *) &(data[j * sizeof(slot)]);
-			if ((slot -> offset) >= largestOffsetUncompressed && (slot -> offset) < compressedOffset) {
-				//Check if the slot actually needs moving.
-				if ((slot -> offset) + (slot -> length) == compressedOffset) {
-					noCompressionNeeded = true;
-					//since the slot is already compressed, update the compressedOffset
-					compressedOffset = slot -> offset;
-					break;
-				}
-				else {
-					largestOffsetUncompressed = slot -> offset;
-					currentSlot = slot;
-				}
-			}
-		}
-		// if there's no shift needed, continue to find the next slot that may need compression.
-		if (noCompressionNeeded == true) {
-			continue;
-		}
-		// If there are only slots with offset = INVALID_SLOT, the currentSlot will be null.
-		// (the inner loop never sets currentSlot, since largestOffsetUncompressed is initialized to 0 > INVALID_SLOT)
-		// break because there are no more valid records to compress
-		if (currentSlot == NULL) {
-			break;
-		}
-		// else, we must move the memory and update the slot offset.
-		memmove(&data[compressedOffset - (currentSlot->length)], &data[currentSlot->offset], currentSlot->length);
-		currentSlot->offset = compressedOffset - (currentSlot->length);
-	}
-	**/
 	//TODO when can this fail? supposedly never.
-	return OK;
 }
 
 //------------------------------------------------------------------
@@ -306,7 +262,7 @@ Status HeapPage::InsertRecord(const char *recPtr, int length, RecordID& rid) {
 	int slotNum;
 	for (int i = 0; i < numOfSlots; i++) {
 		slot = GetSlotAtIndex(i);
-		if (slot->length == INVALID_SLOT) {
+		if (SlotIsEmpty(slot)) {
 			slotAvail = true;
 			slotNum = i;
 			break;
@@ -335,8 +291,7 @@ Status HeapPage::InsertRecord(const char *recPtr, int length, RecordID& rid) {
 		slot = AppendNewSlot();
 		slotNum = numOfSlots-1;
 	}
-	slot->offset = freePtr-length;
-	slot->length = length;
+	FillSlot(slot, freePtr-length, length);
 
 	// set free stats
 	freePtr -= length;
@@ -357,7 +312,7 @@ bool HeapPage::CheckRecordValidity(RecordID rid) {
 		return false;
 	}
 	Slot* slot = GetSlotAtIndex(rid.slotNo);
-	if (slot->length == INVALID_SLOT) {
+	if (SlotIsEmpty(slot)) {
 		return false;
 	}
 	return true;
@@ -379,11 +334,20 @@ Status HeapPage::DeleteRecord(RecordID rid) {
 
 	Slot* slot = GetSlotAtIndex(rid.slotNo);
 	freeSpace += slot->length;
-	slot->length = INVALID_SLOT;
+	/*if the record was located at the very beginning of the records,
+	 *reclaim the space. DO NOT NEED TO for holes.*/
+	if (slot->offset == freePtr) { 
+		freePtr += slot->length;
+	}
+	SetSlotEmpty(slot);
 
-	// if slot is the last one, delete it
-	if (rid.slotNo == numOfSlots-1) {
-		numOfSlots--;
+	/*Working backwards from the slot directory, remove all invalid slots*/
+	for (int i = numOfSlots - 1; i >= 0; i--) {
+		if (SlotIsEmpty(GetSlotAtIndex(i))) {
+			numOfSlots--;
+			freeSpace += sizeof(slot);
+		}
+		else break; //hit a valid slot, it is the new end of the directory.
 	}
 	return OK;
 }
@@ -400,10 +364,10 @@ Status HeapPage::FirstRecord(RecordID& rid) {
 	if (IsEmpty()) return DONE;
 
 	short max_offset = 0;
-	int first_slot_no;
+	int first_slot_no = 0; //guaranteed to change after for loop
 	for (int i = 0; i < numOfSlots; i++) {
 		Slot* slot = GetSlotAtIndex(i);
-		if (slot->offset > max_offset) {
+		if (slot->offset > max_offset && !SlotIsEmpty(slot)) {
 			max_offset = slot->offset;
 			first_slot_no = i;
 		}
@@ -431,12 +395,12 @@ Status HeapPage::NextRecord (RecordID curRid, RecordID& nextRid) {
 		return DONE;
 	}
 
-	int next_slot_no;
+	int next_slot_no = 0; //guaranteed to change after the for loop
 	short max_offset = 0;
 	for (int i = 0; i< numOfSlots; i++) {
 		Slot* slot = GetSlotAtIndex(i);
-		if (slot->offset < curSlot->offset && slot->offset > max_offset) {
-			// largest offset that's smaller than curSlot's record offset
+		if (slot->offset < curSlot->offset && slot->offset > max_offset && !SlotIsEmpty(slot)) {
+			// largest offset that's smaller than curSlot's record offset, also must be valid.
 			max_offset = slot->offset;
 			next_slot_no = i;
 		}
@@ -501,7 +465,7 @@ int HeapPage::AvailableSpace(void)
 	//If there are no empty slots, return freeSpace - sizeof(slot), since the slot will be
 	//used for an upcoming record.
 	for (int i = 0; i < numOfSlots; i++) {
-		if (GetSlotAtIndex(i) -> offset == INVALID_SLOT) {
+		if (SlotIsEmpty(GetSlotAtIndex(i))) {
 			return freeSpace;
 		}
 	}
@@ -520,7 +484,7 @@ bool HeapPage::IsEmpty(void)
 {
 	/*Scan the slots. If there is a valid record, return false. Otherwise, true*/
 	for (int i = 0; i < numOfSlots; i++) {
-		if (GetSlotAtIndex(i) -> offset != INVALID_SLOT) {
+		if (!SlotIsEmpty(GetSlotAtIndex(i))) {
 			return false;
 		}
 	}
@@ -540,7 +504,7 @@ int HeapPage::GetNumOfRecords()
 	int numOfRecords = 0;
 	/*Scan the slots to see if the record is valid. If valid, inc numRecords.*/
 	for (int i = 0; i < numOfSlots; i++) {
-		if (GetSlotAtIndex(i) -> offset != INVALID_SLOT) {
+		if (!SlotIsEmpty(GetSlotAtIndex(i))) {
 			numOfRecords++;
 		}
 	}
