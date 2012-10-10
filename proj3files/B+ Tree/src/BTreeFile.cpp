@@ -20,8 +20,7 @@
 //           once you have read or created it. You will use the header
 //           page to find the root node.
 //-------------------------------------------------------------------
-BTreeFile::BTreeFile(Status &returnStatus, const char *filename)
-{
+BTreeFile::BTreeFile(Status &returnStatus, const char *filename) {
 	PageID start_pg = INVALID_PAGE;
 	Page *headerPage;
 	if (MINIBASE_DB->GetFileEntry(filename, start_pg) == OK) {
@@ -68,9 +67,17 @@ BTreeFile::BTreeFile(Status &returnStatus, const char *filename)
 //           unpin the header page if it has not been unpinned
 //           in DestroyFile.
 //-------------------------------------------------------------------
-BTreeFile::~BTreeFile()
-{
-	// TODO: Add your code here.
+BTreeFile::~BTreeFile() {
+	HeapPage* heap_header = (HeapPage *) header;
+	// TODO: Not sure if OK is the only thing returned when done flushing,
+	// (could also return DONE if nothing's flushed)
+	if (MINIBASE_BM->FlushPage(heap_header->PageNo()) != OK) {
+		std::cerr << "Unable to flush page " << heap_header << std::endl;
+		return;
+	}
+	if (MINIBASE_BM->UnpinPage(heap_header->PageNo(), false) != OK) {
+		std::cerr << "Unable to unpin page " << heap_header << std::endl;
+	}
 }
 
 //-------------------------------------------------------------------
@@ -100,9 +107,22 @@ Status BTreeFile::DestroyFile()
 // Purpose : Insert an index entry with this rid and key.
 // Note    : If the root didn't exist, create it.
 //-------------------------------------------------------------------
-Status BTreeFile::Insert(const char *key, const RecordID rid)
-{
-	// TODO: Add your code here.
+Status BTreeFile::Insert(const char *key, const RecordID rid) {
+	PageID root_pid = header->GetRootPageID();
+	Page* root_pg;
+	PageID leaf_pid; Page* leaf_pg;
+	if (root_pid == NULL) {
+		NEWPAGE(root_pid, root_pg);
+		// insert key into index
+		IndexPage* root_index = (IndexPage*) root_pg;
+		// making the new leaf page
+		NEWPAGE(leaf_pid, leaf_pg);
+		root_index->Insert(key, leaf_pid);
+	}
+	PIN(root_pid, root_pg);
+	PIN(leaf_pid, leaf_pg);
+	IndexPage* root_index = (IndexPage*) root_pg;
+	
 	return FAIL;
 }
 
