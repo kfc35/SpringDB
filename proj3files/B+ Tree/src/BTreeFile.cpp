@@ -178,6 +178,7 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 		else {
 			//TODO splitting.
 			//Insert propagates up the IndexPage traversal.
+			std::cout << "have to split" << std::endl;
 			return OK;
 		}
 	}
@@ -216,7 +217,7 @@ BTreeFileScan *BTreeFile::OpenScan(const char *lowKey, const char *highKey)
 	if (root_pid == INVALID_PAGE) {
 		return NULL;
 	}
-	if (MINIBASE_BM->PinPage(root_pid, root_pg) != OK) {
+	if (MINIBASE_BM->PinPage(root_pid, root_pg) == OK) {
 		Page *current_pg = root_pg;
 		IndexPage *index_pg;
 		LeafPage *leaf_pg;
@@ -244,7 +245,6 @@ BTreeFileScan *BTreeFile::OpenScan(const char *lowKey, const char *highKey)
 			btfs->current_key = new char[MAX_KEY_LENGTH];
 			memcpy(btfs->current_key, btfs->low, sizeof(btfs->low));
 		}
-
 		return btfs;
 	}
 	else {

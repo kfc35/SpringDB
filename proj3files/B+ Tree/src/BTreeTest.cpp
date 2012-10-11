@@ -251,7 +251,6 @@ bool BTreeDriver::TestNumLeafPages(BTreeFile *btf, int expected)
 
 	while (pid != INVALID_PAGE) {
 		numPages++;
-		std::cout << numPages << std::endl;
 
 		LeafPage *leaf;
 		if (MINIBASE_BM->PinPage(pid, (Page *&)leaf) == FAIL) {
@@ -446,9 +445,11 @@ bool BTreeDriver::TestSinglePage()
 	std::cout << "Inserting 59 initial keys..."	<< std::endl;
 	res = InsertRange(btf, 1, 59);
 	res = res && TestNumLeafPages(btf, 1);
-	std::cout << "Tested Num Leaf Pages" << std::endl;
 	res = res && TestNumEntries(btf, 59);
-	std::cout << "Tested Num Entries" << std::endl;
+
+	if (res) {
+		std::cout << "OK so far!" << std::endl;
+	}
 
 	std::cout << "Checking a few individual keys..." << std::endl;
 	res = res && TestAbsent(btf, 0);
