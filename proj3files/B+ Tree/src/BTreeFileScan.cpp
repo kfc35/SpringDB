@@ -15,7 +15,10 @@
 //-------------------------------------------------------------------
 BTreeFileScan::BTreeFileScan()
 {
-	// TODO: Add your code here.
+	low = NULL;
+	high = NULL;
+	current_leaf = NULL;
+	current_key = NULL;
 }
 
 
@@ -28,7 +31,15 @@ BTreeFileScan::BTreeFileScan()
 //-------------------------------------------------------------------
 BTreeFileScan::~BTreeFileScan()
 {
-	// TODO: Add your code here.
+	if (low != NULL) {
+		delete [] low;
+	}
+	if (high != NULL) {
+		delete [] high;
+	}
+	if (current_key != NULL) {
+		delete [] current_key;
+	}
 }
 
 
@@ -44,6 +55,23 @@ BTreeFileScan::~BTreeFileScan()
 //-------------------------------------------------------------------
 Status BTreeFileScan::GetNext(RecordID &rid, char *&keyPtr)
 {
+	// current_page is still pinned!
+	/*CASE: First "GetNext" Call, with low == NULL*/
+	if (low == NULL && current_key == NULL) {
+		if (current_leaf->GetMinKeyValue(keyPtr, rid) == FAIL) {
+			return DONE;
+		}
+		else {
+			//Update the currently done key and record
+			current_key = new char[MAX_KEY_LENGTH];
+			memcpy(current_key, keyPtr, sizeof(keyPtr));
+			current_record = rid;
+			return OK;
+		}
+	}
+	//TODO lots of other cases...
+	//if (strcmp(current_key, current_leaf->GetMaxKey
+	//current_leaf->
 	// TODO: Add your code here.
 	return FAIL;
 }
@@ -62,6 +90,5 @@ Status BTreeFileScan::GetNext(RecordID &rid, char *&keyPtr)
 //-------------------------------------------------------------------
 Status BTreeFileScan::DeleteCurrent()
 {
-	// TODO: Add your code here.
-	return FAIL;
+	return current_leaf->Delete(current_key, current_record);
 }

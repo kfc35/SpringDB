@@ -29,6 +29,14 @@ private:
 	BTreeFileScan();
 
 	// You may add private methods and variables here.
+	/*Low and High keys*/
+	char *low;
+	char *high;
+
+	/*Current leaf page and consecutive key between low and high*/
+	LeafPage *current_leaf;
+	char *current_key;
+	RecordID current_record;
 };
 
 #endif

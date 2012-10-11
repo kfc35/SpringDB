@@ -27,30 +27,30 @@ BTreeFile::BTreeFile(Status &returnStatus, const char *filename) {
 		//index does exist in the database.
 		//start_pg is PageID of header page. Open and Pin it.
 		if (MINIBASE_BM->PinPage(start_pg, headerPage) == OK) { 
-			//I assume headerPage points to a valid page after this
 			header = (BTreeHeaderPage *)headerPage;
 			returnStatus = OK;
 		}
 		else {
+			std::cerr << "Error pinning header page in BTreeFile Constructor." << std::endl;
 			returnStatus = FAIL;
 		}
 	}
 	else { //index does not exist in the database
-		if (MINIBASE_DB->AllocatePage(start_pg) == OK) { //allocate page for header
-			//Open and pin the new header page for the B+ Tree (it is an empty page)
-			if (MINIBASE_BM->PinPage(start_pg, headerPage, true) == OK) {
-				//I assume headerPage points to a valid page after this
+		if (MINIBASE_BM->NewPage(start_pg, headerPage) == OK) { //allocate and pin page for header
+			//try to add the file entry
+			if (MINIBASE_DB->AddFileEntry(filename, start_pg) == OK) {
 				header = (BTreeHeaderPage *)headerPage;
 				header->Init(start_pg);
-
-				returnStatus = MINIBASE_DB->AddFileEntry(filename, start_pg);
+				returnStatus = OK;
 			}
 			else {
+				std::cerr << "Error adding file entry in BTreeFile Constructor." << std::endl;
+				MINIBASE_BM->FreePage(start_pg); //Attempt to free the page on failure
 				returnStatus = FAIL;
 			}
 		}
 		else { //The DB failed to allocate new page for the header
-			//TODO ensure that AllocatePage returns OK on success... it could return DONE instead.
+			std::cerr << "Error getting new header page in BTreeFile Constructor." << std::endl;
 			returnStatus = FAIL;
 		}
 	}
@@ -75,7 +75,8 @@ BTreeFile::~BTreeFile() {
 		std::cerr << "Unable to flush page " << heap_header << std::endl;
 		return;
 	}
-	if (MINIBASE_BM->UnpinPage(heap_header->PageNo(), false) != OK) {
+	/* Setting the page to be dirty just in case*/
+	if (MINIBASE_BM->UnpinPage(heap_header->PageNo(), DIRTY) != OK) {
 		std::cerr << "Unable to unpin page " << heap_header << std::endl;
 	}
 }
@@ -92,7 +93,10 @@ BTreeFile::~BTreeFile() {
 //-------------------------------------------------------------------
 Status BTreeFile::DestroyFile()
 {
-	// TODO: Add your code here.
+	PageID root_pid = header->GetRootPageID();
+
+	//TODO how do we get the dbname?
+	//MINIBASE_DB->DeleteFileEntry();
 	return FAIL;
 }
 
@@ -110,20 +114,79 @@ Status BTreeFile::DestroyFile()
 Status BTreeFile::Insert(const char *key, const RecordID rid) {
 	PageID root_pid = header->GetRootPageID();
 	Page* root_pg;
-	PageID leaf_pid; Page* leaf_pg;
-	if (root_pid == NULL) {
-		NEWPAGE(root_pid, root_pg);
-		// insert key into index
-		IndexPage* root_index = (IndexPage*) root_pg;
-		// making the new leaf page
-		NEWPAGE(leaf_pid, leaf_pg);
-		root_index->Insert(key, leaf_pid);
+
+	/**CASE: B+ Tree is COMPLETELY Empty**/
+	if (root_pid == INVALID_PAGE) {
+		/*Must create a root page of type LEAF_PAGE for the first page*/
+		if (MINIBASE_BM->NewPage(root_pid, root_pg) != OK) {
+			std::cerr << "Error getting new page in Insert." << std::endl;
+			return FAIL; //cannot allocate new page	
+		}
+		header->SetRootPageID(root_pid);
+		/*Flush the setting of the new root page to disk*/
+		//TODO this flushing comes up with errors
+		/*if (MINIBASE_BM->FlushPage(((HeapPage *)header)->PageNo()) != OK) {
+			std::cerr << "Error flushing header page in Insert." << std::endl;
+			MINIBASE_BM->FreePage(root_pid); //Attempt to free the page on failure
+			return FAIL;
+		}*/
+
+		LeafPage *leaf_pg = (LeafPage *)root_pg;
+		leaf_pg->Init(root_pid, LEAF_PAGE);
+		//leaf_pg->SetNextPage(INVALID_PAGE);
+		//leaf_pg->SetPrevPage(INVALID_PAGE);
+		/*Try to insert the record into this leaf (root) page*/
+		if (leaf_pg->Insert(key, rid) != OK) { //Should not happen, there is space on the page.
+			std::cerr << "Error in inserting record in root leaf page in Insert." << std::endl;
+			MINIBASE_BM->FreePage(root_pid); //Attempt to free the page on failure
+			return FAIL;	
+		}
+
+		//Write the new record onto disk and unpin the page
+		return MINIBASE_BM->UnpinPage(root_pid, DIRTY);
 	}
-	PIN(root_pid, root_pg);
-	PIN(leaf_pid, leaf_pg);
-	IndexPage* root_index = (IndexPage*) root_pg;
+	/**CASE: B+ Tree has a Root Node**/
+	else {
+		if (MINIBASE_BM->PinPage(root_pid, root_pg) != OK) {
+			std::cerr << "Error pinning root page in Insert." << std::endl;
+			return FAIL; //cannot pin root page
+		}
+
+		/**Traverse from the root page until you get the leaf page associated
+		  *with this key*/
+		LeafPage *leaf_pg;
+		IndexPage *index_pg;
+		PageKVScan<PageID> possiblePages;
+		Page *current_pg = root_pg;
+		//TODO: we probably should keep track of the path taken all the way down to the leaf page
+		//For future reference when we need to split nodes, since it can propogate up.
+		//COMMENTED OUT BECAUSE WE ARE ONLY DEALING WITH ONE LEAF NODE TREES
+		/*while (((ResizableRecordPage *) current_pg)->GetType() == INDEX_PAGE) {
+			index_pg = (IndexPage *)current_pg;
+			Status searchResult = index_pg->Search(key, possiblePages);
+			
+		}*/
+		leaf_pg = (LeafPage *)current_pg;
+		if (leaf_pg->HasSpaceForValue(key)) {
+			if (leaf_pg->Insert(key, rid) != OK) { //Should not happen, there is space on the page.
+				std::cerr << "Error in inserting record in root leaf page in Insert." << std::endl;
+				return FAIL;	
+			}
+			//TODO later probably have to unpin the whole IndexPage traversal.
+			return MINIBASE_BM->UnpinPage(leaf_pg->PageNo(), DIRTY);
+		}
+		else {
+			//TODO splitting.
+			//Insert propagates up the IndexPage traversal.
+			return OK;
+		}
+	}
+
+	//PIN(root_pid, root_pg);
+	//PIN(leaf_pid, leaf_pg);
+	//IndexPage* root_index = (IndexPage*) root_pg;
 	
-	return FAIL;
+	//return FAIL;
 }
 
 //-------------------------------------------------------------------
@@ -147,8 +210,46 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 //-------------------------------------------------------------------
 BTreeFileScan *BTreeFile::OpenScan(const char *lowKey, const char *highKey)
 {
-	// TODO: Add your code here.
-	return NULL;
+	/*Find the leaf page with the lowKey in it*/
+	PageID root_pid = header->GetRootPageID();
+	Page *root_pg;
+	if (root_pid == INVALID_PAGE) {
+		return NULL;
+	}
+	if (MINIBASE_BM->PinPage(root_pid, root_pg) != OK) {
+		Page *current_pg = root_pg;
+		IndexPage *index_pg;
+		LeafPage *leaf_pg;
+		//TODO loop iteration through index pages to find a specific leaf page.
+		//Exactly the same as the function in INSERT, except don't need to keep all
+		//the pages pinned this time.
+		/*while (((ResizableRecordPage *) current_pg)->GetType() == INDEX_PAGE) {
+			index_pg = (IndexPage *)current_pg;
+		}*/
+		leaf_pg = (LeafPage *)current_pg;
+		BTreeFileScan *btfs = new BTreeFileScan();
+		/*Initialize scan with these low and high values*/
+		if (lowKey != NULL) {
+			btfs->low = new char[MAX_KEY_LENGTH];
+			memcpy(btfs->low, lowKey, sizeof(lowKey));
+		}
+		if (highKey != NULL) {
+			btfs->high = new char[MAX_KEY_LENGTH];
+			memcpy(btfs->high, highKey, sizeof(highKey));
+		}
+
+		/*Initialize with this leaf page*/
+		btfs->current_leaf = leaf_pg; //PAGE STAYS PINNED!
+		if (lowKey != NULL) {
+			btfs->current_key = new char[MAX_KEY_LENGTH];
+			memcpy(btfs->current_key, btfs->low, sizeof(btfs->low));
+		}
+
+		return btfs;
+	}
+	else {
+		return NULL;
+	}
 }
 
 
