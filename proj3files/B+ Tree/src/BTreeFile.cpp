@@ -28,7 +28,7 @@ BTreeFile::BTreeFile(Status &returnStatus, const char *filename) {
 		//start_pg is PageID of header page. Open and Pin it.
 		if (MINIBASE_BM->PinPage(start_pg, headerPage) == OK) { 
 			header = (BTreeHeaderPage *)headerPage;
-			fname = new char[sizeof(filename)];
+			fname = new char[strlen(filename) + 1]; //+1 for \0
 			strcpy(fname, filename);
 			returnStatus = OK;
 		}
@@ -43,7 +43,7 @@ BTreeFile::BTreeFile(Status &returnStatus, const char *filename) {
 			if (MINIBASE_DB->AddFileEntry(filename, start_pg) == OK) {
 				header = (BTreeHeaderPage *)headerPage;
 				header->Init(start_pg);
-				fname = new char[sizeof(filename)];
+				fname = new char[strlen(filename) + 1]; // +1 for \0
 				strcpy(fname, filename);
 				returnStatus = OK;
 			}
@@ -72,10 +72,9 @@ BTreeFile::BTreeFile(Status &returnStatus, const char *filename) {
 //           in DestroyFile.
 //-------------------------------------------------------------------
 BTreeFile::~BTreeFile() {
-	std::cout << "in deconstructor" << std::endl;
-	//TODO when this is commented out, its ok, or else it crashs
-	delete [] fname;
-	std::cout << "after deleting fname" << std::endl;
+	if (fname != NULL) {
+		delete [] fname;
+	}
 	// TODO: Not sure if OK is the only thing returned when done flushing,
 	// (could also return DONE if nothing's flushed)
 	/*if (MINIBASE_BM->FlushPage(heap_header->PageNo()) != OK) {
