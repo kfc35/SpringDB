@@ -20,7 +20,6 @@ BTreeFileScan::BTreeFileScan()
 	current_leaf = NULL;
 	currentIsDirty = false;
 	current_key = NULL;
-	current_record_index = -1;
 }
 
 
@@ -70,22 +69,32 @@ void BTreeFileScan::AdvanceCurrentLeaf() {
 //-------------------------------------------------------------------
 Status BTreeFileScan::GetNext(RecordID &rid, char *&keyPtr)
 {
-	/*CASE: No more records to read or High key has been passed*/
-	if (strcmp(current_key, high) > 0 || current_leaf == NULL) {
+	/*CASE: No more records to read*/
+	if (current_leaf == NULL) {
 		return DONE;
+	}
+	/*CASE: high key has been passed*/
+	if (high != NULL) {
+		if (strcmp(current_key, high) > 0) {
+			return DONE;
+		}
 	}
 	// current_page is still pinned!
 	/*CASE: First "GetNext" Call, with low == NULL*/
 	if (low == NULL && current_key == NULL) {
-		if (current_leaf->GetMinKeyValue(keyPtr, rid) == FAIL) {
+		if (current_leaf->GetMinKey(keyPtr) == FAIL) {
 			return DONE;
 		}
 		else {
 			//Update the currentkey and record
 			current_key = new char[MAX_KEY_LENGTH];
 			memcpy(current_key, keyPtr, sizeof(keyPtr));
-			current_record_index = 0;
-			current_record = rid;
+
+			//Initialize the base scan.
+			current_leaf->Search(current_key, current_scan); //this will not fail; key exists.
+			current_scan.GetNext(keyPtr, current_record); //position the scan past the first entry
+			rid = current_record;
+
 			return OK;
 		}
 	}
@@ -95,38 +104,67 @@ Status BTreeFileScan::GetNext(RecordID &rid, char *&keyPtr)
 		current_key = new char[MAX_KEY_LENGTH];
 		memcpy(current_key, low, sizeof(low));
 
-		//Search for the key in this page
-		PageKVScan<RecordID> kvscan;
 		//Find the next valid key if low = current_key DNE in this leaf page
-		while (current_leaf->Search(current_key, kvscan) == FAIL) {
+		while (current_leaf->Search(current_key, current_scan) == FAIL) {
 			AdvanceCurrentLeaf();
 			if (current_leaf == NULL) { //no more records
 				return DONE;
 			}
 		}
 		
-		//Iterate through kvscan to get the next valid key, set current_key
-		//If the next valid key > high key, print done
+		//Iterate through the current_scan to get the next valid key
+		current_scan.GetNext(keyPtr, current_record); //must be at least one to initialize
+		while (strcmp(low, keyPtr) > 0) {
+			//This can unfortunately happen (kv pairs run out on the page)
+			if (current_scan.GetNext(keyPtr, current_record) == DONE) {
+				AdvanceCurrentLeaf();
+				if (current_leaf == NULL) {
+					return DONE;
+				}
+
+				//update the scan to go through this leaf
+				current_leaf->Search(current_key, current_scan);
+			}
+		}
+		//Advancing has gone past the high key
+		if (high != NULL) {
+			if (strcmp(keyPtr, high) > 0) {
+				return DONE;
+			}
+		}
+		memcpy(current_key, keyPtr, sizeof(current_key));
+		rid = current_record;
+		return OK;
 	}
 	/*CASE: Arbitrary "GetNext" Call when current_key != null*/
 	else {
-		//current key is definitely valid.
-		PageKVScan<RecordID> kvscan;
-		if (current_leaf->Search(current_key, kvscan) == FAIL) {
+		//current_key and current_scan are definitely valid
+		if (current_scan.GetNext(keyPtr, current_record) == DONE) {
 			AdvanceCurrentLeaf();
-			if (current_leaf == NULL) { //no more records
+			if (current_leaf == NULL) {
 				return DONE;
 			}
-			/*Just get the minimum key and value of the new leaf*/
-			//if the key is over max, don't output though
+
+			//Get the minimum key of the new page
+			if (current_leaf->GetMinKey(keyPtr) == FAIL) {
+				return DONE;
+			}
+			memcpy(current_key, keyPtr, sizeof(keyPtr));
+
+			//Initialize the base scan.
+			current_leaf->Search(current_key, current_scan); //this will not fail; key exists.
+			current_scan.GetNext(keyPtr, current_record); //position the scan past the first entry
 		}
-		else {
-			//Process the kvscan
-			//take care if key increases, or past record index
-			//if the key increases over max, don't output though
+		memcpy(current_key, keyPtr, sizeof(keyPtr));
+		//Advancing has gone past the high key
+		if (high != NULL) {
+			if (strcmp(keyPtr, high) > 0) {
+				return DONE;
+			}
 		}
+		rid = current_record;
+		return OK;
 	}
-	return FAIL;
 }
 
 

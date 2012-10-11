@@ -37,8 +37,8 @@ private:
 	LeafPage *current_leaf;
 	bool currentIsDirty;
 	char *current_key;
-	int current_record_index;
 	RecordID current_record;
+	PageKVScan<RecordID> current_scan;
 
 	void AdvanceCurrentLeaf();
 };
