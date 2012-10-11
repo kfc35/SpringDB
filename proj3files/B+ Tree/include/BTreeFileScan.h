@@ -35,7 +35,9 @@ private:
 
 	/*Current leaf page and consecutive key between low and high*/
 	LeafPage *current_leaf;
+	bool currentIsDirty;
 	char *current_key;
+	int current_record_index;
 	RecordID current_record;
 };
 
