@@ -44,6 +44,19 @@ BTreeFileScan::~BTreeFileScan()
 	}
 }
 
+/** Advances the current_leaf to the next leaf page if possible**/
+void BTreeFileScan::AdvanceCurrentLeaf() {
+	/*Unpin the current page, Pin the next page and set it to current*/
+	PageID next_leaf_pg_id = current_leaf->GetNextPage();
+	MINIBASE_BM->UnpinPage(current_leaf->PageNo(), currentIsDirty);
+	if (next_leaf_pg_id == INVALID_PAGE) {
+		current_leaf = NULL;
+		return;
+	}
+	Page *next_leaf = (Page *)current_leaf;
+	MINIBASE_BM->PinPage(next_leaf_pg_id, next_leaf);
+	current_leaf = (LeafPage *)next_leaf;
+}
 
 //-------------------------------------------------------------------
 // BTreeFileScan::GetNext
@@ -57,8 +70,8 @@ BTreeFileScan::~BTreeFileScan()
 //-------------------------------------------------------------------
 Status BTreeFileScan::GetNext(RecordID &rid, char *&keyPtr)
 {
-	/*CASE: High key has been passed*/
-	if (strcmp(current_key, high) > 0) {
+	/*CASE: No more records to read or High key has been passed*/
+	if (strcmp(current_key, high) > 0 || current_leaf == NULL) {
 		return DONE;
 	}
 	// current_page is still pinned!
@@ -68,7 +81,7 @@ Status BTreeFileScan::GetNext(RecordID &rid, char *&keyPtr)
 			return DONE;
 		}
 		else {
-			//Update the currently done key and record
+			//Update the currentkey and record
 			current_key = new char[MAX_KEY_LENGTH];
 			memcpy(current_key, keyPtr, sizeof(keyPtr));
 			current_record_index = 0;
@@ -84,32 +97,34 @@ Status BTreeFileScan::GetNext(RecordID &rid, char *&keyPtr)
 
 		//Search for the key in this page
 		PageKVScan<RecordID> kvscan;
-		//Find the next valid key if low = current_key DNE in leaf page
+		//Find the next valid key if low = current_key DNE in this leaf page
 		while (current_leaf->Search(current_key, kvscan) == FAIL) {
-			/*Unpin the current page, Pin the next page and set it to current*/
-			PageID next_leaf_pg_id = current_leaf->GetNextPage();
-			MINIBASE_BM->UnpinPage(current_leaf->PageNo(), currentIsDirty);
-			if (next_leaf_pg_id == INVALID_PAGE) {
-				current_leaf = NULL;
-				break;
+			AdvanceCurrentLeaf();
+			if (current_leaf == NULL) { //no more records
+				return DONE;
 			}
-			Page *next_leaf = (Page *)current_leaf;
-			MINIBASE_BM->PinPage(next_leaf_pg_id, next_leaf);
-			current_leaf = (LeafPage *)next_leaf;
 		}
-		if (current_leaf == NULL) { //no more records
-			return DONE;
-		}
+		
 		//Iterate through kvscan to get the next valid key, set current_key
 		//If the next valid key > high key, print done
 	}
-	/*CASE: Arbitrary "GetNext" Call when low == null and current_key != null*/
-	else if (low == NULL) {
-		//current key is definitely valid.
-	}
-	/*CASE: Arbitrary "GetNext" call when low and current_key != null*/
+	/*CASE: Arbitrary "GetNext" Call when current_key != null*/
 	else {
 		//current key is definitely valid.
+		PageKVScan<RecordID> kvscan;
+		if (current_leaf->Search(current_key, kvscan) == FAIL) {
+			AdvanceCurrentLeaf();
+			if (current_leaf == NULL) { //no more records
+				return DONE;
+			}
+			/*Just get the minimum key and value of the new leaf*/
+			//if the key is over max, don't output though
+		}
+		else {
+			//Process the kvscan
+			//take care if key increases, or past record index
+			//if the key increases over max, don't output though
+		}
 	}
 	return FAIL;
 }

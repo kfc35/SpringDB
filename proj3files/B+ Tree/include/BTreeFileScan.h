@@ -39,6 +39,8 @@ private:
 	char *current_key;
 	int current_record_index;
 	RecordID current_record;
+
+	void AdvanceCurrentLeaf();
 };
 
 #endif
