@@ -28,6 +28,8 @@ BTreeFile::BTreeFile(Status &returnStatus, const char *filename) {
 		//start_pg is PageID of header page. Open and Pin it.
 		if (MINIBASE_BM->PinPage(start_pg, headerPage) == OK) { 
 			header = (BTreeHeaderPage *)headerPage;
+			fname = new char[sizeof(filename)];
+			strcpy(fname, filename);
 			returnStatus = OK;
 		}
 		else {
@@ -41,6 +43,8 @@ BTreeFile::BTreeFile(Status &returnStatus, const char *filename) {
 			if (MINIBASE_DB->AddFileEntry(filename, start_pg) == OK) {
 				header = (BTreeHeaderPage *)headerPage;
 				header->Init(start_pg);
+				fname = new char[sizeof(filename)];
+				strcpy(fname, filename);
 				returnStatus = OK;
 			}
 			else {
@@ -68,7 +72,10 @@ BTreeFile::BTreeFile(Status &returnStatus, const char *filename) {
 //           in DestroyFile.
 //-------------------------------------------------------------------
 BTreeFile::~BTreeFile() {
-	HeapPage* heap_header = (HeapPage *) header;
+	std::cout << "in deconstructor" << std::endl;
+	//TODO when this is commented out, its ok, or else it crashs
+	delete [] fname;
+	std::cout << "after deleting fname" << std::endl;
 	// TODO: Not sure if OK is the only thing returned when done flushing,
 	// (could also return DONE if nothing's flushed)
 	/*if (MINIBASE_BM->FlushPage(heap_header->PageNo()) != OK) {
@@ -76,8 +83,11 @@ BTreeFile::~BTreeFile() {
 		return;
 	}*/
 	/* Setting the page to be dirty just in case*/
-	if (MINIBASE_BM->UnpinPage(heap_header->PageNo(), DIRTY) != OK) {
-		std::cerr << "Unable to unpin page " << heap_header << std::endl;
+	if (header != NULL) {
+		HeapPage* heap_header = (HeapPage *) header;
+		if (MINIBASE_BM->UnpinPage(heap_header->PageNo(), DIRTY) != OK) {
+			std::cerr << "Unable to unpin page " << heap_header << std::endl;
+		}
 	}
 }
 
@@ -94,10 +104,30 @@ BTreeFile::~BTreeFile() {
 Status BTreeFile::DestroyFile()
 {
 	PageID root_pid = header->GetRootPageID();
+	Page *root_pg;
+	if (MINIBASE_BM->PinPage(root_pid, root_pg) != OK) {
+		std::cerr << "Unable to pin root page in DestroyFile" << std::endl;
+		return FAIL;
+	}
+	if (((ResizableRecordPage *)root_pg)->GetType() == INDEX_PAGE) {
+		//TODO: recursive free of child pages, and then free this page.
+	}
+	else {
+		//Index page is a leaf page, free it.
+		if (MINIBASE_BM->FreePage(root_pid) != OK) {
+			std::cerr << "Unable to free root page in DestroyFile" << std::endl;
+			return FAIL;	
+		}
+	}
+	//Free the header page
+	if (MINIBASE_BM->FreePage(((HeapPage *)header)->PageNo()) != OK) {
+		std::cerr << "Unable to free header page in DestroyFile" << std::endl;
+		return FAIL;
+	}
+	header = NULL;
 
-	//TODO how do we get the dbname?
-	//MINIBASE_DB->DeleteFileEntry();
-	return FAIL;
+	//Remove DB file
+	return MINIBASE_DB->DeleteFileEntry(fname);
 }
 
 
@@ -232,11 +262,11 @@ BTreeFileScan *BTreeFile::OpenScan(const char *lowKey, const char *highKey)
 		/*Initialize scan with these low and high values*/
 		if (lowKey != NULL) {
 			btfs->low = new char[MAX_KEY_LENGTH];
-			memcpy(btfs->low, lowKey, sizeof(lowKey));
+			strcpy(btfs->low, lowKey);
 		}
 		if (highKey != NULL) {
 			btfs->high = new char[MAX_KEY_LENGTH];
-			memcpy(btfs->high, highKey, sizeof(highKey));
+			strcpy(btfs->high, highKey);
 		}
 
 		/*Initialize with this leaf page*/

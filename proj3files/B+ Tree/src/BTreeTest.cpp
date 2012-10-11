@@ -446,10 +446,6 @@ bool BTreeDriver::TestSinglePage()
 	res = res && TestNumLeafPages(btf, 1);
 	res = res && TestNumEntries(btf, 59);
 
-	if (res) {
-		std::cout << "OK so far!" << std::endl;
-	}
-
 	std::cout << "Checking a few individual keys..." << std::endl;
 	res = res && TestAbsent(btf, 0);
 	res = res && TestPresent(btf, 2);

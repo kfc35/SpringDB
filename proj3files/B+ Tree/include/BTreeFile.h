@@ -30,6 +30,9 @@ private:
 	//Please don't delete this method. It's used for testing,
 	// and may be useful for you.
 	PageID GetLeftLeaf();
+
+	//Added variable: filename
+	char *fname;
 };
 
 

@@ -41,6 +41,9 @@ BTreeFileScan::~BTreeFileScan()
 	if (current_key != NULL) {
 		delete [] current_key;
 	}
+	if (current_leaf != NULL) {
+		MINIBASE_BM->UnpinPage(((ResizableRecordPage *) current_leaf)->PageNo(), currentIsDirty);
+	}
 }
 
 /** Advances the current_leaf to the next leaf page if possible**/
@@ -75,7 +78,7 @@ Status BTreeFileScan::GetNext(RecordID &rid, char *&keyPtr)
 		return DONE;
 	}
 	/*CASE: high key has been passed*/
-	if (high != NULL) {
+	if (high != NULL && current_key != NULL) {
 		if (strcmp(current_key, high) > 0) {
 			return DONE;
 		}
@@ -89,7 +92,7 @@ Status BTreeFileScan::GetNext(RecordID &rid, char *&keyPtr)
 		else {
 			//Update the currentkey and record
 			current_key = new char[MAX_KEY_LENGTH];
-			memcpy(current_key, keyPtr, sizeof(keyPtr));
+			strcpy(current_key, keyPtr);
 
 			//Initialize the base scan.
 			current_leaf->Search(current_key, current_scan); //this will not fail; key exists.
@@ -103,19 +106,26 @@ Status BTreeFileScan::GetNext(RecordID &rid, char *&keyPtr)
 	else if (current_key == NULL) {
 		//Initialize the current_key to the low key
 		current_key = new char[MAX_KEY_LENGTH];
-		memcpy(current_key, low, sizeof(low));
+		strcpy(current_key, low);
 
 		//Find the next valid key if low = current_key DNE in this leaf page
-		while (current_leaf->Search(current_key, current_scan) == FAIL) {
-			AdvanceCurrentLeaf();
-			if (current_leaf == NULL) { //no more records
+		if (current_leaf->Search(current_key, current_scan) == FAIL) {
+			//low is TOO low. just get the min key because it is higher than the low
+			if (current_leaf->GetMinKey(keyPtr) == FAIL) {
 				return DONE;
 			}
+			strcpy(current_key, keyPtr);
+			current_leaf->Search(current_key, current_scan); //WILL be valid.
+			/*AdvanceCurrentLeaf();
+			if (current_leaf == NULL) { //no more records
+				return DONE;
+			}*/
 		}
 		
 		//Iterate through the current_scan to get the next valid key
 		current_scan.GetNext(keyPtr, current_record); //must be at least one to initialize
-		while (strcmp(low, keyPtr) > 0) {
+		//keyPtr will always be above low?
+		/*while (strcmp(low, keyPtr) > 0) {
 			//This can unfortunately happen (kv pairs run out on the page)
 			if (current_scan.GetNext(keyPtr, current_record) == DONE) {
 				AdvanceCurrentLeaf();
@@ -126,14 +136,14 @@ Status BTreeFileScan::GetNext(RecordID &rid, char *&keyPtr)
 				//update the scan to go through this leaf
 				current_leaf->Search(current_key, current_scan);
 			}
-		}
+		}*/
 		//Advancing has gone past the high key
 		if (high != NULL) {
 			if (strcmp(keyPtr, high) > 0) {
 				return DONE;
 			}
 		}
-		memcpy(current_key, keyPtr, sizeof(current_key));
+		strcpy(current_key, keyPtr);
 		rid = current_record;
 		return OK;
 	}
@@ -150,13 +160,13 @@ Status BTreeFileScan::GetNext(RecordID &rid, char *&keyPtr)
 			if (current_leaf->GetMinKey(keyPtr) == FAIL) {
 				return DONE;
 			}
-			memcpy(current_key, keyPtr, sizeof(keyPtr));
+			strcpy(current_key, keyPtr);
 
 			//Initialize the base scan.
 			current_leaf->Search(current_key, current_scan); //this will not fail; key exists.
 			current_scan.GetNext(keyPtr, current_record); //position the scan past the first entry
 		}
-		memcpy(current_key, keyPtr, sizeof(keyPtr));
+		strcpy(current_key, keyPtr);
 		//Advancing has gone past the high key
 		if (high != NULL) {
 			if (strcmp(keyPtr, high) > 0) {
