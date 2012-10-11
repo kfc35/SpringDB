@@ -55,6 +55,7 @@ void BTreeFileScan::AdvanceCurrentLeaf() {
 	Page *next_leaf = (Page *)current_leaf;
 	MINIBASE_BM->PinPage(next_leaf_pg_id, next_leaf);
 	current_leaf = (LeafPage *)next_leaf;
+	currentIsDirty = false;
 }
 
 //-------------------------------------------------------------------
@@ -181,5 +182,6 @@ Status BTreeFileScan::GetNext(RecordID &rid, char *&keyPtr)
 //-------------------------------------------------------------------
 Status BTreeFileScan::DeleteCurrent()
 {
+	currentIsDirty = true;
 	return current_leaf->Delete(current_key, current_record);
 }

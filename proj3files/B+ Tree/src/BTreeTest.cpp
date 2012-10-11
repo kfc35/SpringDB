@@ -170,7 +170,6 @@ bool BTreeDriver::TestAbsent(BTreeFile *btf, int key, int ridOffset, int pad)
 	rid.slotNo = key + ridOffset + 1;
 
 	BTreeFileScan *scan = btf->OpenScan(skey, NULL);
-
 	if (scan == NULL) {
 		std::cerr << "Error opening scan. " << std::endl;
 		return false;

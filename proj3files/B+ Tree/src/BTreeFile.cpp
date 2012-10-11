@@ -71,10 +71,10 @@ BTreeFile::~BTreeFile() {
 	HeapPage* heap_header = (HeapPage *) header;
 	// TODO: Not sure if OK is the only thing returned when done flushing,
 	// (could also return DONE if nothing's flushed)
-	if (MINIBASE_BM->FlushPage(heap_header->PageNo()) != OK) {
+	/*if (MINIBASE_BM->FlushPage(heap_header->PageNo()) != OK) {
 		std::cerr << "Unable to flush page " << heap_header << std::endl;
 		return;
-	}
+	}*/
 	/* Setting the page to be dirty just in case*/
 	if (MINIBASE_BM->UnpinPage(heap_header->PageNo(), DIRTY) != OK) {
 		std::cerr << "Unable to unpin page " << heap_header << std::endl;
@@ -241,10 +241,6 @@ BTreeFileScan *BTreeFile::OpenScan(const char *lowKey, const char *highKey)
 
 		/*Initialize with this leaf page*/
 		btfs->current_leaf = leaf_pg; //PAGE STAYS PINNED!
-		if (lowKey != NULL) {
-			btfs->current_key = new char[MAX_KEY_LENGTH];
-			memcpy(btfs->current_key, btfs->low, sizeof(btfs->low));
-		}
 		return btfs;
 	}
 	else {
