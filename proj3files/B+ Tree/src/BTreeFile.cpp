@@ -416,12 +416,27 @@ BTreeFileScan *BTreeFile::OpenScan(const char *lowKey, const char *highKey)
 		Page *current_pg = root_pg;
 		IndexPage *index_pg;
 		LeafPage *leaf_pg;
-		//TODO loop iteration through index pages to find a specific leaf page.
-		//Exactly the same as the function in INSERT, except don't need to keep all
-		//the pages pinned this time.
-		/*while (((ResizableRecordPage *) current_pg)->GetType() == INDEX_PAGE) {
+
+		while (((ResizableRecordPage *) current_pg)->GetType() == INDEX_PAGE) {
 			index_pg = (IndexPage *)current_pg;
-		}*/
+			PageKVScan<PageID> indexScanner;
+			char* key;
+			PageID next_search_pg;
+			Status searchResult = index_pg->Search(lowKey, indexScanner);
+			if (searchResult == OK || searchResult == DONE) {
+				indexScanner.GetNext(key, next_search_pg);
+			} else {
+				next_search_pg = index_pg->GetPrevPage();
+			}
+
+			if (MINIBASE_BM->UnpinPage(index_pg->PageNo(), CLEAN) != OK) {
+				return NULL;
+			}
+			if (MINIBASE_BM->PinPage(next_search_pg, current_pg) != OK) {
+				return NULL;
+			}
+		}
+
 		leaf_pg = (LeafPage *)current_pg;
 		BTreeFileScan *btfs = new BTreeFileScan();
 		/*Initialize scan with these low and high values*/
