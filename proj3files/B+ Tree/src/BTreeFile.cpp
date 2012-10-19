@@ -106,21 +106,24 @@ BTreeFile::~BTreeFile() {
 Status BTreeFile::DestroyFile()
 {
 	PageID root_pid = header->GetRootPageID();
-	Page *root_pg;
-	if (MINIBASE_BM->PinPage(root_pid, root_pg) != OK) {
-		std::cerr << "Unable to pin root page in DestroyFile" << std::endl;
-		return FAIL;
-	}
-	if (((ResizableRecordPage *)root_pg)->GetType() == INDEX_PAGE) {
-		//TODO: recursive free of child pages, and then free this page.
-	}
-	else {
-		//Index page is a leaf page, free it.
-		if (MINIBASE_BM->FreePage(root_pid) != OK) {
-			std::cerr << "Unable to free root page in DestroyFile" << std::endl;
-			return FAIL;	
-		}
-	}
+	//Page *root_pg;
+	//if (MINIBASE_BM->PinPage(root_pid, root_pg) != OK) {
+	//	std::cerr << "Unable to pin root page in DestroyFile" << std::endl;
+	//	return FAIL;
+	//}
+	//if (((ResizableRecordPage *)root_pg)->GetType() == INDEX_PAGE) {
+	//	//TODO: recursive free of child pages, and then free this page.
+	//}
+	//else {
+	//	//Index page is a leaf page, free it.
+	//	if (MINIBASE_BM->FreePage(root_pid) != OK) {
+	//		std::cerr << "Unable to free root page in DestroyFile" << std::endl;
+	//		return FAIL;	
+	//	}
+	//}
+
+	FreeTree(root_pid);
+
 	//Free the header page
 	if (MINIBASE_BM->FreePage(((HeapPage *)header)->PageNo()) != OK) {
 		std::cerr << "Unable to free header page in DestroyFile" << std::endl;
@@ -130,6 +133,24 @@ Status BTreeFile::DestroyFile()
 
 	//Remove DB file
 	return MINIBASE_DB->DeleteFileEntry(fname);
+}
+
+Status FreeTree(PageID root_pid) {
+	Page* root;
+	PIN(root_pid, root);
+	if (((ResizableRecordPage*) root)->GetType() == INDEX_PAGE) {
+		// index page
+		PageKVScan<PageID>* scanner;
+		char* currentKey;
+		PageID currentValue;
+		IndexPage* index_pg = (IndexPage*) root;
+		FreeTree(index_pg->GetPrevPage());
+		index_pg->OpenScan(scanner);
+		while (scanner->GetNext(currentKey, currentValue) == OK) {
+			FreeTree(currentValue);
+		}
+	}
+	FREEPAGE(root_pid);
 }
 
 
