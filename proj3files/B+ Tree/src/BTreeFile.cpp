@@ -262,7 +262,15 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 			// create a new page
 			PageID split_pid;
 			LeafPage* new_page;
-			NEWPAGE(split_pid, new_page);
+			//NEWPAGE(split_pid, new_page);
+			if (MINIBASE_BM->NewPage(split_pid, (Page*&)new_page) != OK) {
+				std::cerr << "Error allocating new page " << split_pid << " for page split." << std::endl;
+				int numUnpinned = MINIBASE_BM->GetNumOfUnpinnedBuffers();
+				int numBuffer = MINIBASE_BM->GetNumOfBuffers();
+				std::cerr << "Number of buffer pages: " << numBuffer << std::endl;
+				std::cerr << "Number of unpinned buffer frame: " << numUnpinned << std::endl;
+				return FAIL;
+			}
 
 			// splits leaf into 2 pages
 			new_page->Init(split_pid, LEAF_PAGE);
@@ -302,7 +310,11 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 					// split index node
 					PageID new_index_pid;
 					IndexPage* new_index;
-					NEWPAGE(new_index_pid, new_index);
+					//NEWPAGE(new_index_pid, new_index);
+					if (MINIBASE_BM->NewPage(new_index_pid, (Page*&)new_index) != OK) {
+						std::cerr << "Error allocating new page " << new_index_pid << " for index splitting" << std::endl;
+						return FAIL;
+					}
 					new_index->Init(new_index_pid, INDEX_PAGE);
 					SplitIndex(new_index, index_pg, new_index_key, new_index_value);
 
@@ -318,7 +330,11 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 					if (index_pg->PageNo() == header->GetRootPageID()) {
 						PageID new_root_pid;
 						IndexPage* new_root;
-						NEWPAGE(new_root_pid, new_root);
+						//NEWPAGE(new_root_pid, new_root);
+						if (MINIBASE_BM->NewPage(new_root_pid, (Page*&) new_root) != OK) {
+							std::cerr << "error allocating new page " << new_root_pid << " for root split" << std::endl;
+							return FAIL;
+						}
 						new_root->Init(new_root_pid, INDEX_PAGE);
 						new_root->SetPrevPage(index_pg->PageNo());
 						new_root->Insert(new_index_key, new_index_value);
@@ -327,8 +343,8 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 						UNPIN(new_root_pid, DIRTY);
 					}
 
-					UNPIN(index_pg->PageNo(), DIRTY);
-					UNPIN(new_index->PageNo(), DIRTY);
+					UNPIN(index_pid, DIRTY);
+					UNPIN(new_index_pid, DIRTY);
 				}
 			}
 			delete [] traversed_pages;
