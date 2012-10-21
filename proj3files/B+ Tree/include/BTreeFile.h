@@ -31,6 +31,10 @@ private:
 	// and may be useful for you.
 	PageID GetLeftLeaf();
 
+	Status FreeTree(PageID root_pid);
+	void SplitIndex(IndexPage* newPage, IndexPage* oldPage, const char* newKey, PageID newValue);
+	void SplitPage(LeafPage* newPage, LeafPage* oldPage, const char* newKey, RecordID newValue);
+
 	//Added variable: filename
 	char *fname;
 };
