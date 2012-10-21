@@ -170,6 +170,7 @@ bool BTreeDriver::TestAbsent(BTreeFile *btf, int key, int ridOffset, int pad)
 	rid.slotNo = key + ridOffset + 1;
 
 	BTreeFileScan *scan = btf->OpenScan(skey, NULL);
+
 	if (scan == NULL) {
 		std::cerr << "Error opening scan. " << std::endl;
 		return false;
@@ -687,6 +688,7 @@ bool BTreeDriver::TestInsertsWithIndexSplits()
 
 		// there was a split. Check balance.
 		if (newRootId != rootId) {
+			std::cout << "root split" << std::endl;
 			IndexPage *ip;
 
 			if (MINIBASE_BM->PinPage(newRootId, (Page *&) ip) == FAIL) {
