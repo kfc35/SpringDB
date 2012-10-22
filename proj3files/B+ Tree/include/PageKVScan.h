@@ -116,11 +116,15 @@ public:
 
 		char *keyToDelete = curKey;
 		ValType valToDelete = GetVal(curKey, curValNum);
-
-		if (curRid.slotNo == 0 && page->GetNumOfRecords() == 1 && numValsWithKey == 1) {
+		
+		if (page->Delete(keyToDelete, valToDelete) == FAIL) {
+			return FAIL;
+		}
+		
+		if (page->GetNumOfRecords() == 0) {
 			curKey = NULL;
 		} else {
-			if (numValsWithKey == 1) {
+			if (curValNum == 0) {
 				// Move cursor back to the previous record
 				if (curRid.slotNo > 0) {
 					curRid.slotNo -= 1;
@@ -130,13 +134,10 @@ public:
 				}
 			} else {
 				numValsWithKey -= 1;
+				curValNum -= 1;
 			}
 
 			toInit = true;
-		}
-
-		if (page->Delete(keyToDelete, valToDelete) == FAIL) {
-			return FAIL;
 		}
 
 		return OK;

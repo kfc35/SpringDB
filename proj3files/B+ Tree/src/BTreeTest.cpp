@@ -330,6 +330,41 @@ bool BTreeDriver::TestNumEntries(BTreeFile *btf, int expected)
 }
 
 
+bool BTreeDriver::SizeForKeyOnLeafPage(ResizableRecordPage *page,
+									   const char *key,
+									   int &result)
+{
+	int recordCount = 0;
+	
+	RecordID rid;
+	rid.pageNo = page->PageNo();
+
+	for (rid.slotNo = 0; rid.slotNo < page->GetNumOfRecords(); rid.slotNo++) {
+		char *recordKey;
+		int recordLen;
+
+		if (page->ReturnRecord(rid, recordKey, recordLen) != OK) {
+			return false;
+		}
+
+		if (strcmp(key, recordKey) == 0) {
+			recordCount++;
+		}
+	}
+
+	// Make sure that we found at least one record with the requested key.
+	if (recordCount <= 0) {
+		return false;
+	} else {
+		// The extra 1 byte comes from the space consumed by the terminating '\0'
+		// character of key, and the extra 4 bytes come from the space consumed
+		// by the HeapPage slot pointer.
+		result = ((int)sizeof(RecordID))*recordCount + (int)strlen(key) + 1 + 4;
+		return true;
+	}
+}
+
+
 //-------------------------------------------------------------------
 // BTreeDriver::TestBalance
 //
@@ -365,53 +400,34 @@ bool BTreeDriver::TestBalance(BTreeFile *btf,
 
 	assert(strcmp(leftMax, rightMin) < 0);
 
-	// Can we move a record from left to right and increase the amount of
-	// available space without changing which one has more?
+	// Can we move a record from one page to the other without change which
+	// of the two pages has more available space?
+	int diff = abs(rightSpace - leftSpace);
 	if (leftSpace < rightSpace) {
-		int diff = rightSpace - leftSpace;
-
-		// We can move a key/value pair without creating a new slot/key.
-		if (strcmp(leftMax, rightMin) == 0) {
-			if (diff > sizeof(RecordID)) {
-				std::cerr << "Could have moved a record from left to right"
-						  << "and reduced difference in freespace. "
-						  << std::endl;
-				return false;
-			}
+		int leftMaxSize;
+		if (SizeForKeyOnLeafPage(left, leftMax, leftMaxSize) == false) {
+			std::cerr << "Failed to get leaf page size" << std::endl;
+			return false;
 		}
-		// We would have to create a new slot.
-		else {
-			if (diff > (int)sizeof(RecordID) + (int)strlen(leftMax) + 1 + slotSize) {
-				std::cerr << "Could have moved a record from left to right"
-						  << "and reduced difference in freespace. "
-						  << std::endl;
-				return false;
-			}
 
+		if (leftMaxSize < diff) {
+			std::cerr << "Could improve balance by moving records from left to right leaf" << std::endl;
+			return false;
 		}
-	} else if (rightSpace < leftSpace)  {
-		int diff = leftSpace - rightSpace;
+	} else {
+		int rightMinSize;
+		if (SizeForKeyOnLeafPage(right, rightMin, rightMinSize) == false) {
+			std::cerr << "Failed to get leaf page size" << std::endl;
+			return false;
+		}
 
-		// We can move a key/value pair without creating a new slot/key.
-		if (strcmp(leftMax, rightMin) == 0) {
-			if (diff > sizeof(RecordID)) {
-				std::cerr << "Could have moved a record from right to left"
-						  << "and reduced difference in freespace. "
-						  << std::endl;
-				return false;
-			}
-		}
-		// We would have to create a new slot.
-		else {
-			if (diff > (int)sizeof(RecordID) + (int)strlen(leftMax) + 1 + slotSize) {
-				std::cerr << "Could have moved a record from right to left"
-						  << "and reduced difference in freespace. "
-						  << std::endl;
-				return false;
-			}
+		if (rightMinSize < diff) {
+			std::cerr << "Could improve balance by moving records from right to left leaf" << std::endl;
+			return false;
 		}
 	}
 
+	// Everything seems okay.
 	return true;
 }
 
@@ -688,7 +704,6 @@ bool BTreeDriver::TestInsertsWithIndexSplits()
 
 		// there was a split. Check balance.
 		if (newRootId != rootId) {
-			std::cout << "root split" << std::endl;
 			IndexPage *ip;
 
 			if (MINIBASE_BM->PinPage(newRootId, (Page *&) ip) == FAIL) {
