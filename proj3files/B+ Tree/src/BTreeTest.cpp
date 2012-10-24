@@ -373,8 +373,8 @@ bool BTreeDriver::TestBalance(BTreeFile *btf,
 		// We can move a key/value pair without creating a new slot/key.
 		if (strcmp(leftMax, rightMin) == 0) {
 			if (diff > sizeof(RecordID)) {
-				std::cerr << "Could have moved a record from left to right"
-						  << "and reduced difference in freespace. "
+				std::cerr << "Could have moved a record from left to right "
+						  << "and reduced difference in freespace. 1"
 						  << std::endl;
 				return false;
 			}
@@ -382,8 +382,8 @@ bool BTreeDriver::TestBalance(BTreeFile *btf,
 		// We would have to create a new slot.
 		else {
 			if (diff > (int)sizeof(RecordID) + (int)strlen(leftMax) + 1 + slotSize) {
-				std::cerr << "Could have moved a record from left to right"
-						  << "and reduced difference in freespace. "
+				std::cerr << "Could have moved a record from left to right "
+						  << "and reduced difference in freespace. 2"
 						  << std::endl;
 				return false;
 			}
@@ -395,8 +395,8 @@ bool BTreeDriver::TestBalance(BTreeFile *btf,
 		// We can move a key/value pair without creating a new slot/key.
 		if (strcmp(leftMax, rightMin) == 0) {
 			if (diff > sizeof(RecordID)) {
-				std::cerr << "Could have moved a record from right to left"
-						  << "and reduced difference in freespace. "
+				std::cerr << "Could have moved a record from right to left "
+						  << "and reduced difference in freespace. 3"
 						  << std::endl;
 				return false;
 			}
@@ -404,8 +404,8 @@ bool BTreeDriver::TestBalance(BTreeFile *btf,
 		// We would have to create a new slot.
 		else {
 			if (diff > (int)sizeof(RecordID) + (int)strlen(leftMax) + 1 + slotSize) {
-				std::cerr << "Could have moved a record from right to left"
-						  << "and reduced difference in freespace. "
+				std::cerr << "Could have moved a record from right to left "
+						  << "and reduced difference in freespace. 4"
 						  << std::endl;
 				return false;
 			}

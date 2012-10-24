@@ -176,24 +176,14 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 	/**CASE: B+ Tree is COMPLETELY Empty**/
 	if (root_pid == INVALID_PAGE) {
 		/*Must create a root page of type LEAF_PAGE for the first page*/
-		// TODO replace with macro?
 		if (MINIBASE_BM->NewPage(root_pid, root_pg) != OK) {
 			std::cerr << "Error getting new page in Insert." << std::endl;
 			return FAIL; //cannot allocate new page	
 		}
 		header->SetRootPageID(root_pid);
-		/*Flush the setting of the new root page to disk*/
-		//TODO this flushing comes up with errors <- BufMgr spec says can't flush unless page is unpinned
-		/*if (MINIBASE_BM->FlushPage(((HeapPage *)header)->PageNo()) != OK) {
-			std::cerr << "Error flushing header page in Insert." << std::endl;
-			MINIBASE_BM->FreePage(root_pid); //Attempt to free the page on failure
-			return FAIL;
-		}*/
 
 		LeafPage *leaf_pg = (LeafPage *)root_pg;
 		leaf_pg->Init(root_pid, LEAF_PAGE);
-		//leaf_pg->SetNextPage(INVALID_PAGE);
-		//leaf_pg->SetPrevPage(INVALID_PAGE);
 		/*Try to insert the record into this leaf (root) page*/
 		if (leaf_pg->Insert(key, rid) != OK) { //Should not happen, there is space on the page.
 			std::cerr << "Error in inserting record in root leaf page in Insert." << std::endl;
@@ -206,8 +196,6 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 	}
 	/**CASE: B+ Tree has a Root Node**/
 	else {
-		// TODO: replace with macro?
-		//PIN(root_pid, root_pg);
 		if (MINIBASE_BM->PinPage(root_pid, root_pg) != OK) {
 			std::cerr << "Error pinning root page in Insert." << std::endl;
 			return FAIL; //cannot pin root page
@@ -219,11 +207,8 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 		IndexPage *index_pg;
 		PageKVScan<PageID> possiblePages;
 		Page *current_pg = root_pg;
-		//list<PageID> traversed_pages;
 		PageID* traversed_pages = new PageID [MAX_TREE_DEPTH];
 		
-		//TODO: we probably should keep track of the path taken all the way down to the leaf page
-		//For future reference when we need to split nodes, since it can propogate up.
 		int tree_depth = 0;
 		while (((ResizableRecordPage *) current_pg)->GetType() == INDEX_PAGE) {
 			index_pg = (IndexPage *)current_pg;
@@ -241,34 +226,35 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 				next_search_pg = index_pg->GetPrevPage();
 			}
 			
-			UNPIN(index_pg->PageNo(), CLEAN);
-			PIN(next_search_pg, current_pg);
+			if (MINIBASE_BM->UnpinPage(index_pg->PageNo(), CLEAN) != OK) {
+				std::cerr << "Error unpinning page " << index_pg->PageNo() << std::endl;
+				delete [] traversed_pages;
+				return FAIL;
+			}
+			if (MINIBASE_BM->PinPage(next_search_pg, (Page *&) current_pg) != OK) {
+				std::cerr << "Error pinning page " << next_search_pg << std::endl;
+				delete [] traversed_pages;
+				return FAIL;
+			}
 		}
-
-		//delete &possiblePages;
 
 		// at leaf level
 		leaf_pg = (LeafPage *)current_pg;
 		if (leaf_pg->HasSpaceForValue(key)) {
 			if (leaf_pg->Insert(key, rid) != OK) { //Should not happen, there is space on the page.
 				std::cerr << "Error in inserting record in root leaf page in Insert." << std::endl;
-				return FAIL;	
+				delete [] traversed_pages;
+				return FAIL;
 			}
-			//TODO later probably have to unpin the whole IndexPage traversal.
-			// ^ currently unpinned after every step of the traversal
+			delete [] traversed_pages;
 			return MINIBASE_BM->UnpinPage(leaf_pg->PageNo(), DIRTY);
-		}
-		else { // splitting
+		} else { // splitting
 			// create a new page
 			PageID split_pid;
 			LeafPage* new_page;
-			//NEWPAGE(split_pid, new_page);
 			if (MINIBASE_BM->NewPage(split_pid, (Page*&)new_page) != OK) {
 				std::cerr << "Error allocating new page " << split_pid << " for page split." << std::endl;
-				int numUnpinned = MINIBASE_BM->GetNumOfUnpinnedBuffers();
-				int numBuffer = MINIBASE_BM->GetNumOfBuffers();
-				std::cerr << "Number of buffer pages: " << numBuffer << std::endl;
-				std::cerr << "Number of unpinned buffer frame: " << numUnpinned << std::endl;
+				delete [] traversed_pages;
 				return FAIL;
 			}
 
@@ -284,28 +270,66 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 			// updating index
 			char* new_index_key;
 			PageID new_index_value;
-			PageID index_pid;
+			PageID index_pid = leaf_pg->PageNo(); // for creating new index root
 			bool update_index = true;
 			
 			new_page->GetMinKey(new_index_key);
 			new_index_value = new_page->PageNo();
 
 			// unpin the leaf pages
-			UNPIN(leaf_pg->PageNo(), DIRTY);
-			UNPIN(new_page->PageNo(), DIRTY);
+			if (MINIBASE_BM->UnpinPage(leaf_pg->PageNo(), DIRTY) != OK) {
+				std::cerr << "Error unpinning page " << leaf_pg->PageNo() << std::endl;
+				delete [] traversed_pages;
+				return FAIL;
+			}
+			if (MINIBASE_BM->UnpinPage(new_page->PageNo(), DIRTY) != OK) {
+				std::cerr << "Error unpinning page " << leaf_pg->PageNo() << std::endl;
+				delete [] traversed_pages;
+				return FAIL;
+			}
 
+			if (tree_depth == 0) {
+				// root is leaf, need to create new index root
+				IndexPage* new_root_pg;
+				PageID new_root_pid;
+				if (MINIBASE_BM->NewPage(new_root_pid, (Page*&)new_root_pg) != OK) {
+					std::cerr << "Error allocating new index page " << new_root_pid << std::endl;
+					delete [] traversed_pages;
+					return FAIL;
+				}
+				new_root_pg->Init(new_root_pid, INDEX_PAGE);
+				new_root_pg->Insert(new_index_key, new_index_value);
+				new_root_pg->SetPrevPage(index_pid);
+				header->SetRootPageID(new_root_pid);
+				if (MINIBASE_BM->UnpinPage(new_root_pid, DIRTY) != OK) {
+					std::cerr << "Error unpinning page " << new_root_pid << std::endl;
+					delete [] traversed_pages;
+					return FAIL;
+				}
+				delete [] traversed_pages;
+				return OK;
+			}
+			
 			tree_depth = tree_depth-1;
 			while (tree_depth >= 0 && update_index) {
 				index_pid = traversed_pages[tree_depth];
 				tree_depth--;
-				PIN(index_pid, index_pg);
+				if (MINIBASE_BM->PinPage(index_pid, (Page *&) index_pg) != OK) {
+					std::cerr << "Error pinning page " << index_pid << std::endl;
+					return FAIL;
+				}
 				if (index_pg->HasSpaceForValue(new_index_key)) {
 					if (index_pg->Insert(new_index_key, new_index_value) != OK) {
 						std::cerr << "Error inserting index key." << std::endl;
+						delete [] traversed_pages;
 						return FAIL;
 					}
 					update_index = false;
-					UNPIN(index_pid, DIRTY);
+					if (MINIBASE_BM->UnpinPage(index_pid, DIRTY) != OK) {
+						std::cerr << "Error unpinning page " << index_pid << std::endl;
+						delete [] traversed_pages;
+						return FAIL;
+					}
 				} else {
 					// split index node
 					PageID new_index_pid;
@@ -313,6 +337,7 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 					//NEWPAGE(new_index_pid, new_index);
 					if (MINIBASE_BM->NewPage(new_index_pid, (Page*&)new_index) != OK) {
 						std::cerr << "Error allocating new page " << new_index_pid << " for index splitting" << std::endl;
+						delete [] traversed_pages;
 						return FAIL;
 					}
 					new_index->Init(new_index_pid, INDEX_PAGE);
@@ -333,6 +358,7 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 						//NEWPAGE(new_root_pid, new_root);
 						if (MINIBASE_BM->NewPage(new_root_pid, (Page*&) new_root) != OK) {
 							std::cerr << "error allocating new page " << new_root_pid << " for root split" << std::endl;
+							delete [] traversed_pages;
 							return FAIL;
 						}
 						new_root->Init(new_root_pid, INDEX_PAGE);
@@ -340,11 +366,23 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 						new_root->Insert(new_index_key, new_index_value);
 						header->SetRootPageID(new_root_pid);
 						std::cout << "Root split, old root_pid: " << index_pg->PageNo() << ". new root_pid: " << new_root_pid << std::endl;
-						UNPIN(new_root_pid, DIRTY);
+						if (MINIBASE_BM->UnpinPage(new_root_pid, DIRTY) != OK) {
+							std::cerr << "Error unpinning page " << new_root_pid << std::endl;
+							delete [] traversed_pages;
+							return FAIL;
+						}
 					}
 
-					UNPIN(index_pid, DIRTY);
-					UNPIN(new_index_pid, DIRTY);
+					if (MINIBASE_BM->UnpinPage(index_pid, DIRTY) != OK) {
+						std::cerr << "Error unpinning page " << index_pid << std::endl;
+						delete [] traversed_pages;
+						return FAIL;
+					}
+					if (MINIBASE_BM->UnpinPage(new_index_pid, DIRTY) != OK) {
+						std::cerr << "Error unpinning page " << new_index_pid << std::endl;
+						delete [] traversed_pages;
+						return FAIL;
+					}
 				}
 			}
 			delete [] traversed_pages;
@@ -374,7 +412,6 @@ void BTreeFile::SplitIndex(IndexPage* newPage, IndexPage* oldPage, const char* n
 }
 
 void BTreeFile::SplitPage(LeafPage* newPage, LeafPage* oldPage, const char* newKey, RecordID newValue) {
-	//std::cout << "splitting page " << oldPage->PageNo() << " into " << newPage->PageNo() << std::endl;
 	char* maxKey;
 	PageKVScan<RecordID> pageScanner;
 	char* currentKey;
@@ -390,7 +427,6 @@ void BTreeFile::SplitPage(LeafPage* newPage, LeafPage* oldPage, const char* newK
 		oldPage->DeleteKey(maxKey);
 		oldPage->GetMaxKey(maxKey);
 	}
-	//delete &pageScanner;
 
 	if (oldPage->AvailableSpace() < newPage->AvailableSpace()) {
 		newPage->Insert(newKey, newValue);
@@ -403,7 +439,6 @@ void BTreeFile::SplitPage(LeafPage* newPage, LeafPage* oldPage, const char* newK
 			}
 			oldPage->DeleteKey(maxKey);
 		}
-		//delete &pageScanner;
 	} else {
 		char* minKey;
 		oldPage->Insert(newKey, newValue);
@@ -415,7 +450,6 @@ void BTreeFile::SplitPage(LeafPage* newPage, LeafPage* oldPage, const char* newK
 			}
 			newPage->DeleteKey(minKey);
 		}
-		//delete &pageScanner;
 	}
 }
 
@@ -456,13 +490,15 @@ BTreeFileScan *BTreeFile::OpenScan(const char *lowKey, const char *highKey)
 			index_pg = (IndexPage *)current_pg;
 			PageKVScan<PageID> indexScanner;
 			char* key;
-			Status searchResult = index_pg->Search(lowKey, indexScanner);
-			if (searchResult == OK || searchResult == DONE) {
+			Status searchResult;
+			if (lowKey != NULL) {
+				searchResult = index_pg->Search(lowKey, indexScanner);
+			}
+			if (lowKey != NULL && (searchResult == OK || searchResult == DONE)) {
 				indexScanner.GetNext(key, next_search_pg);
 			} else {
 				next_search_pg = index_pg->GetPrevPage();
 			}
-			//delete &indexScanner;
 
 			if (MINIBASE_BM->UnpinPage(index_pg->PageNo(), CLEAN) != OK) {
 				return NULL;
