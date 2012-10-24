@@ -39,6 +39,10 @@ public:
 	static bool TestNumLeafPages(BTreeFile *btf, int expected);
 	static bool TestScanCount(BTreeFileScan *scan, int expected);
 	static bool TestNumEntries(BTreeFile *btf, int expected);
+	
+	static bool SizeForKeyOnLeafPage(ResizableRecordPage *page,
+									 const char *key,
+									 int &result);
 
 	static bool TestBalance(BTreeFile *btf,
 							ResizableRecordPage *left,

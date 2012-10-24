@@ -242,7 +242,7 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 		leaf_pg = (LeafPage *)current_pg;
 		if (leaf_pg->HasSpaceForValue(key)) {
 			if (leaf_pg->Insert(key, rid) != OK) { //Should not happen, there is space on the page.
-				std::cerr << "Error in inserting record in root leaf page in Insert." << std::endl;
+				std::cerr << "Error in inserting record in leaf page in Insert." << std::endl;
 				delete [] traversed_pages;
 				return FAIL;
 			}
