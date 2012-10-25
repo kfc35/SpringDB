@@ -334,7 +334,6 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 					// split index node
 					PageID new_index_pid;
 					IndexPage* new_index;
-					//NEWPAGE(new_index_pid, new_index);
 					if (MINIBASE_BM->NewPage(new_index_pid, (Page*&)new_index) != OK) {
 						std::cerr << "Error allocating new page " << new_index_pid << " for index splitting" << std::endl;
 						delete [] traversed_pages;
@@ -350,7 +349,6 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 					if (index_pg->PageNo() == header->GetRootPageID()) {
 						PageID new_root_pid;
 						IndexPage* new_root;
-						//NEWPAGE(new_root_pid, new_root);
 						if (MINIBASE_BM->NewPage(new_root_pid, (Page*&) new_root) != OK) {
 							std::cerr << "error allocating new page " << new_root_pid << " for root split" << std::endl;
 							delete [] traversed_pages;
@@ -360,7 +358,7 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 						new_root->SetPrevPage(index_pg->PageNo());
 						new_root->Insert(new_index_key, new_index_value);
 						header->SetRootPageID(new_root_pid);
-						std::cout << "Root split, old root_pid: " << index_pg->PageNo() << ". new root_pid: " << new_root_pid << std::endl;
+						//std::cout << "Root split, old root_pid: " << index_pg->PageNo() << ". new root_pid: " << new_root_pid << std::endl;
 						if (MINIBASE_BM->UnpinPage(new_root_pid, DIRTY) != OK) {
 							std::cerr << "Error unpinning page " << new_root_pid << std::endl;
 							delete [] traversed_pages;
@@ -386,25 +384,20 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 	}
 }
 
+
+//-------------------------------------------------------------------
+// BTreeFile::SplitIndex
+//
+// Input   : newPage - newly created index page
+//           oldPage - the full page to be split
+//			 newKey - the key to be inserted
+//			 newValue - the new value to be inserted
+// Output  : propagatedKey - the key to be propagated up a level
+//			 propagatedValue - the value to be propagated up a level
+// Purpose : Splitting an index page
+//-------------------------------------------------------------------
 void BTreeFile::SplitIndex(IndexPage* newPage, IndexPage* oldPage, const char* newKey, PageID newValue, 
-						   char*& newIndexKey, PageID& newIndexValue) {
-	std::cout << "splitting index:" << oldPage->PageNo() << std::endl;
-
-	//bool inserted = false;
-
-	//// move half the pages over to the new page
-	//while (oldPage->AvailableSpace() < newPage->AvailableSpace()) {
-	//	oldPage->GetMaxKey(maxKey);
-	//	if (!inserted && strcmp(maxKey, newKey) < 0) {
-	//		newPage->Insert(newKey, newValue);
-	//		inserted = true;
-	//	} else {
-	//		oldPage->GetMaxKeyValue(maxKey, currentValue);
-	//		newPage->Insert(maxKey, currentValue);
-	//		oldPage->DeleteKey(maxKey);
-	//	}
-	//}
-	//char* maxKey;
+						   char*& propagatedKey, PageID& propagatedValue) {
 	char* currentKey;
 	PageID currentValue;
 
@@ -417,28 +410,39 @@ void BTreeFile::SplitIndex(IndexPage* newPage, IndexPage* oldPage, const char* n
 		oldPage->GetMaxKey(currentKey);
 	}
 
+	// keeping both pages balanced with one entry taken out as the new propagated index
 	if (oldPage->AvailableSpace() < newPage->AvailableSpace()) {
 		newPage->Insert(newKey, newValue);
-		oldPage->GetMaxKeyValue(newIndexKey, newIndexValue);
-		oldPage->DeleteKey(newIndexKey);
+		oldPage->GetMaxKeyValue(propagatedKey, propagatedValue);
+		oldPage->DeleteKey(propagatedKey);
 		while (oldPage->AvailableSpace() < newPage->AvailableSpace()) {
 			// move max key from oldPage to newPage
-			newPage->Insert(newIndexKey, newIndexValue);
-			oldPage->GetMaxKeyValue(newIndexKey, newIndexValue);
-			oldPage->DeleteKey(newIndexKey);
+			newPage->Insert(propagatedKey, propagatedValue);
+			oldPage->GetMaxKeyValue(propagatedKey, propagatedValue);
+			oldPage->DeleteKey(propagatedKey);
 		}
 	} else {
 		oldPage->Insert(newKey, newValue);
-		newPage->GetMinKeyValue(newIndexKey, newIndexValue);
-		newPage->DeleteKey(newIndexKey);
+		newPage->GetMinKeyValue(propagatedKey, propagatedValue);
+		newPage->DeleteKey(propagatedKey);
 		while (oldPage->AvailableSpace() > newPage->AvailableSpace()) {
-			oldPage->Insert(newIndexKey, newIndexValue);
-			newPage->GetMinKeyValue(newIndexKey, newIndexValue);
-			newPage->DeleteKey(newIndexKey);
+			oldPage->Insert(propagatedKey, propagatedValue);
+			newPage->GetMinKeyValue(propagatedKey, propagatedValue);
+			newPage->DeleteKey(propagatedKey);
 		}
 	}
 }
 
+//-------------------------------------------------------------------
+// BTreeFile::SplitPage
+//
+// Input   : newPage - newly created leaf page
+//           oldPage - the full page to be split
+//			 newKey - the key to be inserted
+//			 newValue - the new value to be inserted
+// Output  : None
+// Purpose : Splitting a leaf page
+//-------------------------------------------------------------------
 void BTreeFile::SplitPage(LeafPage* newPage, LeafPage* oldPage, const char* newKey, RecordID newValue) {
 	char* maxKey;
 	PageKVScan<RecordID> pageScanner;
@@ -451,7 +455,6 @@ void BTreeFile::SplitPage(LeafPage* newPage, LeafPage* oldPage, const char* newK
 		oldPage->Search(maxKey, pageScanner);
 		while (pageScanner.GetNext(currentKey, currentValue) == OK) {
 			newPage->Insert(currentKey, currentValue);
-			//pageScanner.DeleteCurrent();
 		}
 		oldPage->DeleteKey(maxKey);
 		oldPage->GetMaxKey(maxKey);

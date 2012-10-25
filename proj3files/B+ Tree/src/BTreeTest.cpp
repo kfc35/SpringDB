@@ -827,3 +827,128 @@ bool BTreeDriver::TestLargeWorkload()
 
 	return res;
 }
+
+bool BTreeDriver::TestBufferPool() {
+	// does some operations
+	// at the end check if there's anything left in the buffer pool
+	std::cout << "Starting Test 5..." << std::endl;
+	unsigned int pinnedPages = MINIBASE_BM->GetNumOfBuffers() - MINIBASE_BM->GetNumOfUnpinnedBuffers();
+	std::cout << "# pinned pages: " << pinnedPages << std::endl;
+
+	BTreeFile* btf;
+	Status status;
+	bool res = true;
+
+	btf = new BTreeFile(status, "BTreeTest5");
+
+	if (status != OK) {
+		std::cerr << "ERROR: Couldn't create a BTreeFile" << std::endl;
+		minibase_errors.show_errors();
+
+		std::cerr << "Hit [enter] to continue..." << std::endl;
+		std::cin.get();
+		exit(1);
+	}
+
+	std::cout << "BTreeIndex created successfully." << std::endl;
+
+	std::cout << "Performing various operations on BTreeFile." << std::endl;
+	InsertRange(btf, 1, 1000, 1, 5, true);
+	InsertRange(btf, 1, 1000, 2, 5, false);
+	InsertRange(btf, 501, 1500, 3, 5, false);
+	InsertRange(btf, 2001, 4000, 1, 5, false);
+
+	char low[MAX_KEY_LENGTH];
+	char high[MAX_KEY_LENGTH];
+
+	BTreeFileScan *scan = btf->OpenScan(NULL, NULL);
+
+	RecordID rid;
+	char* key;
+	int count = 0;
+	while (scan->GetNext(rid, key) != DONE) {
+		count++;
+	}
+
+	if (count != 5000) {
+		std::cerr << "Number of pages inserted doesn't equal 5000. Check insert." << std::endl;
+		res = false;
+	}
+
+	delete scan;
+	if (btf->DestroyFile() != OK) {
+		std::cerr << "Error destroying BTreeFile" << std::endl;
+		res = false;
+	}
+
+	delete btf;
+
+	unsigned int numPinned = MINIBASE_BM->GetNumOfBuffers() - MINIBASE_BM->GetNumOfUnpinnedBuffers();
+	
+	if (pinnedPages - numPinned != 0) {
+		std::cerr << pinnedPages - numPinned << " pages still left in buffer pool after clean up." << std::endl;
+		res = false;
+	}
+	return res;
+}
+
+bool BTreeDriver::TestDeleteCurrent() {
+	Status status;
+	BTreeFile *btf;
+	bool res;
+
+	btf = new BTreeFile(status, "BTreeTest6");
+
+	if (status != OK) {
+		std::cerr << "ERROR: Couldn't create a BTreeFile" << std::endl;
+		minibase_errors.show_errors();
+
+		std::cerr << "Hit [enter] to continue..." << std::endl;
+		std::cin.get();
+		exit(1);
+	}
+
+	std::cout << "Starting Test 6..." << std::endl;
+	std::cout << "BTreeIndex created successfully." << std::endl;
+	std::cout << "Inserting entries..." << std::endl;
+	InsertRange(btf, 1, 10);
+	char low[MAX_KEY_LENGTH];
+	toString(3, low);
+	BTreeFileScan* scan = btf->OpenScan(low, NULL);
+
+	std::cout << "Deleting entries..." << std::endl;
+	RecordID rid;
+	char* keyPtr;
+	scan->GetNext(rid, keyPtr); // 3
+	scan->DeleteCurrent(); // 4
+	scan->GetNext(rid, keyPtr); // 5
+	scan->GetNext(rid, keyPtr); // 6
+	scan->GetNext(rid, keyPtr); // 7
+	scan->DeleteCurrent();
+	delete scan;
+
+	res = TestAbsent(btf, 3);
+	res = TestAbsent(btf, 7);
+
+	std::cout << "Inserting duplicate entry..." << std::endl;
+	InsertKey(btf, 1, 3);
+	toString(1, low);
+	scan = btf->OpenScan(low, NULL);
+
+	std::cout << "Deleting entry..." << std::endl;
+	scan->GetNext(rid, keyPtr); // 1
+	scan->DeleteCurrent(); // 1
+	delete scan;
+
+	res = TestAbsent(btf, 1, 1);
+	res = TestPresent(btf, 1, 3);
+	
+	if (btf->DestroyFile() != OK) {
+		std::cerr << "Error destroying BTreeFile" << std::endl;
+		res = false;
+	}
+
+	delete btf;
+
+	return res;
+}
