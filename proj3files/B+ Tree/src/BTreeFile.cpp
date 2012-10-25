@@ -341,12 +341,7 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 						return FAIL;
 					}
 					new_index->Init(new_index_pid, INDEX_PAGE);
-					SplitIndex(new_index, index_pg, new_index_key, new_index_value);
-
-					// get the propagated index and correct pointers
-					index_pg->GetMaxKey(new_index_key);
-					index_pg->GetMaxKeyValue(new_index_key, new_index_value);
-					index_pg->DeleteKey(new_index_key);
+					SplitIndex(new_index, index_pg, new_index_key, new_index_value, new_index_key, new_index_value);
 
 					new_index->SetPrevPage(new_index_value);
 					new_index_value = new_index->PageNo();
@@ -391,22 +386,55 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 	}
 }
 
-void BTreeFile::SplitIndex(IndexPage* newPage, IndexPage* oldPage, const char* newKey, PageID newValue) {
+void BTreeFile::SplitIndex(IndexPage* newPage, IndexPage* oldPage, const char* newKey, PageID newValue, 
+						   char*& newIndexKey, PageID& newIndexValue) {
 	std::cout << "splitting index:" << oldPage->PageNo() << std::endl;
-	char* maxKey;
-	PageID currentValue;
-	bool inserted = false;
 
-	// move half the pages over to the new page
-	while (oldPage->AvailableSpace() < newPage->AvailableSpace()) {
-		oldPage->GetMaxKey(maxKey);
-		if (!inserted && strcmp(maxKey, newKey) < 0) {
-			newPage->Insert(newKey, newValue);
-			inserted = true;
-		} else {
-			oldPage->GetMaxKeyValue(maxKey, currentValue);
-			newPage->Insert(maxKey, currentValue);
-			oldPage->DeleteKey(maxKey);
+	//bool inserted = false;
+
+	//// move half the pages over to the new page
+	//while (oldPage->AvailableSpace() < newPage->AvailableSpace()) {
+	//	oldPage->GetMaxKey(maxKey);
+	//	if (!inserted && strcmp(maxKey, newKey) < 0) {
+	//		newPage->Insert(newKey, newValue);
+	//		inserted = true;
+	//	} else {
+	//		oldPage->GetMaxKeyValue(maxKey, currentValue);
+	//		newPage->Insert(maxKey, currentValue);
+	//		oldPage->DeleteKey(maxKey);
+	//	}
+	//}
+	//char* maxKey;
+	char* currentKey;
+	PageID currentValue;
+
+	oldPage->GetMaxKey(currentKey);
+	while (!oldPage->IsEmpty() && strcmp(currentKey, newKey) > 0) {
+		// move max key and its value from oldPage to newPage
+		oldPage->GetMaxKeyValue(currentKey, currentValue);
+		newPage->Insert(currentKey, currentValue);
+		oldPage->DeleteKey(currentKey);
+		oldPage->GetMaxKey(currentKey);
+	}
+
+	if (oldPage->AvailableSpace() < newPage->AvailableSpace()) {
+		newPage->Insert(newKey, newValue);
+		oldPage->GetMaxKeyValue(newIndexKey, newIndexValue);
+		oldPage->DeleteKey(newIndexKey);
+		while (oldPage->AvailableSpace() < newPage->AvailableSpace()) {
+			// move max key from oldPage to newPage
+			newPage->Insert(newIndexKey, newIndexValue);
+			oldPage->GetMaxKeyValue(newIndexKey, newIndexValue);
+			oldPage->DeleteKey(newIndexKey);
+		}
+	} else {
+		oldPage->Insert(newKey, newValue);
+		newPage->GetMinKeyValue(newIndexKey, newIndexValue);
+		newPage->DeleteKey(newIndexKey);
+		while (oldPage->AvailableSpace() > newPage->AvailableSpace()) {
+			oldPage->Insert(newIndexKey, newIndexValue);
+			newPage->GetMinKeyValue(newIndexKey, newIndexValue);
+			newPage->DeleteKey(newIndexKey);
 		}
 	}
 }
@@ -423,6 +451,7 @@ void BTreeFile::SplitPage(LeafPage* newPage, LeafPage* oldPage, const char* newK
 		oldPage->Search(maxKey, pageScanner);
 		while (pageScanner.GetNext(currentKey, currentValue) == OK) {
 			newPage->Insert(currentKey, currentValue);
+			//pageScanner.DeleteCurrent();
 		}
 		oldPage->DeleteKey(maxKey);
 		oldPage->GetMaxKey(maxKey);
