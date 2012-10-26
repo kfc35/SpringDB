@@ -920,15 +920,16 @@ bool BTreeDriver::TestDeleteCurrent() {
 	RecordID rid;
 	char* keyPtr;
 	scan->GetNext(rid, keyPtr); // 3
-	scan->DeleteCurrent(); // 4
-	scan->GetNext(rid, keyPtr); // 5
+	scan->GetNext(rid, keyPtr); // 4
+	scan->DeleteCurrent(); // 5
 	scan->GetNext(rid, keyPtr); // 6
 	scan->GetNext(rid, keyPtr); // 7
+	scan->GetNext(rid, keyPtr); // 8
 	scan->DeleteCurrent();
 	delete scan;
 
-	res = TestAbsent(btf, 3);
-	res = TestAbsent(btf, 7);
+	res = TestAbsent(btf, 4);
+	res = TestAbsent(btf, 8);
 
 	std::cout << "Inserting duplicate entry..." << std::endl;
 	InsertKey(btf, 1, 3);

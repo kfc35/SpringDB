@@ -101,29 +101,14 @@ BTreeFile::~BTreeFile() {
 //           freed all the pages, you can use MINIBASE_DB->DeleteFileEntry (dbname)
 //           to delete the database file.
 //-------------------------------------------------------------------
-Status BTreeFile::DestroyFile()
-{
+Status BTreeFile::DestroyFile() {
 	PageID root_pid = header->GetRootPageID();
-	//Page *root_pg;
-	//if (MINIBASE_BM->PinPage(root_pid, root_pg) != OK) {
-	//	std::cerr << "Unable to pin root page in DestroyFile" << std::endl;
-	//	return FAIL;
-	//}
-	//if (((ResizableRecordPage *)root_pg)->GetType() == INDEX_PAGE) {
-	//	//TODO: recursive free of child pages, and then free this page.
-	//}
-	//else {
-	//	//Index page is a leaf page, free it.
-	//	if (MINIBASE_BM->FreePage(root_pid) != OK) {
-	//		std::cerr << "Unable to free root page in DestroyFile" << std::endl;
-	//		return FAIL;	
-	//	}
-	//}
 
-	Status freeStatus = FreeTree(root_pid);
-
-	if (freeStatus != OK) {
-		return FAIL;
+	if (root_pid != INVALID_PAGE) {
+		Status freeStatus = FreeTree(root_pid);
+		if (freeStatus != OK) {
+			return FAIL;
+		}
 	}
 
 	//Free the header page
@@ -152,7 +137,6 @@ Status BTreeFile::FreeTree(PageID root_pid) {
 			Status status = FreeTree(currentValue);
 			if (status != OK) return FAIL;
 		}
-		//delete &scanner;
 	}
 	FREEPAGE(root_pid);
 	return OK;
@@ -289,7 +273,7 @@ Status BTreeFile::Insert(const char *key, const RecordID rid) {
 			}
 
 			if (tree_depth == 0) {
-				// root is leaf, need to create new index root
+				// tree contains a single leaf page, need to create new index root
 				IndexPage* new_root_pg;
 				PageID new_root_pid;
 				if (MINIBASE_BM->NewPage(new_root_pid, (Page*&)new_root_pg) != OK) {
@@ -462,6 +446,15 @@ void BTreeFile::SplitPage(LeafPage* newPage, LeafPage* oldPage, const char* newK
 
 	if (oldPage->AvailableSpace() < newPage->AvailableSpace()) {
 		newPage->Insert(newKey, newValue);
+		oldPage->GetMaxKey(maxKey);
+		// making sure existing values to newKey are moved along with the new value of newKey
+		if (strcmp(newKey, maxKey) == 0) {
+			oldPage->Search(maxKey, pageScanner);
+			while (pageScanner.GetNext(currentKey, currentValue) == OK) {
+				newPage->Insert(currentKey, currentValue);
+			}
+			oldPage->DeleteKey(maxKey);
+		}
 		while (oldPage->AvailableSpace() < newPage->AvailableSpace()) {
 			// move max key and its values from oldPage to newPage
 			oldPage->GetMaxKey(maxKey);
