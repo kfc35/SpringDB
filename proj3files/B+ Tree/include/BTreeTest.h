@@ -56,6 +56,12 @@ public:
 	static bool TestInsertsWithIndexSplits();
 
 	static bool TestLargeWorkload();
+
+	static bool TestBufferPool();
+
+	static bool TestDeleteCurrent();
+
+	static bool TestDestroyFile();
 };
 
 #endif

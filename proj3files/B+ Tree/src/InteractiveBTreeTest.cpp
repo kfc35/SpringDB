@@ -164,6 +164,12 @@ Status InteractiveBTreeTest::RunTests(istream &in)
 					case 4:
 						testSuccess = BTreeDriver::TestLargeWorkload();
 						break;
+					case 5:
+						testSuccess = BTreeDriver::TestBufferPool();
+						break;
+					case 6:
+						testSuccess = BTreeDriver::TestDeleteCurrent();
+						break;
 					default:
 						cout << "Unrecognized test: " << testNum << endl;
 					}
