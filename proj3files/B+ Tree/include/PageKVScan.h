@@ -21,39 +21,56 @@ public:
 	// Purpose : Retrieves the next key-value pair on this page.
 	//-------------------------------------------------------------------
 	Status GetNext(char *&key, ValType &val) {
-		if (curKey == NULL || curRid.slotNo > page->GetNumOfRecords()) {
-			curKey = NULL;
+		if (state == INVALID_SCAN || state == END) {
 			return DONE;
 		}
 
-		// Return current key value pair directly.
-		if (toInit) {
-			toInit = false;
-		}
-
-		//We've exhausted all of the keys with the given value.
-		else if (curValNum == numValsWithKey - 1) {
-			RecordID nextRid;
-
-			//There are no more keys on this page.
-			if (page->NextRecord(curRid, nextRid) == DONE) {
-				//curKey = NULL;
+		// If at the beginning, get the first record
+		if (state == BEGIN) {
+			// Set deleted to false since the pointer is advancing
+			curDeleted = false;
+			// There are no records, so return done
+			if (page->IsEmpty()) {
 				return DONE;
 			}
-			//Move to the next key.
-			else {
-				setKey(nextRid);
-				curRid = nextRid;
-			}
+			// Set the state and current record to the first one
+			state = MID;
+			curRid.slotNo = 0;
+			setKey(curRid);
 		} else {
-			curValNum++;
+			/* Advance to the next value only if the last value was not deleted.
+			 * Advancement is automatic on deletion because the curValNum
+			 * now points to the following value
+			 */
+			if (!curDeleted) {
+				curValNum++;
+			}
+
+			// Set deleted to false since the pointer is advancing
+			curDeleted = false;
+
+			// All values for this record are exhausted
+			if (curValNum == numValsWithKey) {
+				// If all vals for a key were deleted, the key has already
+				// moved forward one spot. Otherwise increment the slot number.
+				if (numValsWithKey > 0) {
+					curRid.slotNo += 1;
+				}
+
+				// This is the last record on the page, so return DONE
+				if (curRid.slotNo == page->GetNumOfRecords()) {
+					state = END;
+					return DONE;
+				}
+
+				setKey(curRid);
+			}
 		}
 
 		key = curKey;
 		val = GetVal(curKey, curValNum);
 		return OK;
 	}
-
 
 	//-------------------------------------------------------------------
 	// PageKVScan::GetPrev
@@ -68,26 +85,37 @@ public:
 	// Purpose : Retrieves the previous key-value pair on this page.
 	//-------------------------------------------------------------------
 	Status GetPrev(char *&key, ValType &val) {
-		if (curKey == NULL) {
+		if (state == INVALID_SCAN || state == BEGIN) {
 			return DONE;
 		}
 
-		//We've exhausted all of the keys with the given value.
-		if (curValNum == 0) {
-			RecordID nextRid;
+		// Set deleted to false since the pointer is moving
+		curDeleted = false;
 
-			//There are no more keys on this page.
-			if (curRid.slotNo == 0) {
-				curKey = NULL;
+		if (state == END) {
+			// There are no records, so return done
+			if (page->IsEmpty()) {
 				return DONE;
 			}
-			//Move to the next key.
-			else {
-				curRid.slotNo -= 1;
+			// Set the state and current record to the first one
+			state = MID;
+			curRid.slotNo = page->GetNumOfRecords() - 1;
+			setKey(curRid, true);
+		} else {
+			// Move back one value
+			curValNum--;
+			//All values in the record are exhausted
+			if (curValNum < 0) {
+				// Move to the new key
+				curRid.slotNo--;
+
+				// This was the first record on the page, so return done
+				if (curRid.slotNo < 0) {
+					state = BEGIN;
+					return DONE;
+				}
 				setKey(curRid, true);
 			}
-		} else {
-			curValNum--;
 		}
 
 		key = curKey;
@@ -101,8 +129,10 @@ public:
 	// Input   : None.
 	// Output  : None.
 	// Return  : OK   if successful.
-	//           DONE if there have been no calls to GetNext
-	//                or the last call returned DONE.
+	//           DONE if there have been no calls to GetNext or GetPrev,
+	//				  or the element returned by the last call to GetNext
+	//				  or GetPrev has already been deleted,
+	//                or the last call returned DONE
 	//           FAIL if the underlying call to Delete failed.
 	// Purpose : Deletes the "current" key-value pair, i.e. the one returned
 	// 	         by the last call to GetNext or GetPrev. After this has been called.
@@ -110,7 +140,7 @@ public:
 	//           keyValue pair.
 	//-------------------------------------------------------------------
 	Status DeleteCurrent() {
-		if (toInit || curKey == NULL || page->IsEmpty()) {
+		if (curDeleted || state != MID) {
 			return DONE;
 		}
 
@@ -120,44 +150,35 @@ public:
 		if (page->Delete(keyToDelete, valToDelete) == FAIL) {
 			return FAIL;
 		}
-		
-		if (page->GetNumOfRecords() == 0) {
-			curKey = NULL;
-		} else {
-			if (curValNum == 0) {
-				// Move cursor back to the previous record
-				if (curRid.slotNo > 0) {
-					curRid.slotNo -= 1;
-					setKey(curRid, true);
-				} else {
-					setKey(curRid);
-				}
-			} else {
-				numValsWithKey -= 1;
-				curValNum -= 1;
-			}
 
-			toInit = true;
-		}
-
+		numValsWithKey--;
+		curDeleted = true;
 		return OK;
 	}
 
 private:
+	enum IteratorState {
+		BEGIN,
+		MID,
+		END,
+		INVALID_SCAN
+	};
 	SortedKVPage<ValType> *page;
+	enum IteratorState state;
 	RecordID curRid;
 	int curValNum, numValsWithKey;
-	bool toInit;
 	char *curKey;
+	bool curDeleted;
 
-	// Private method that initializes the iterator to the
-	// first value of the key in the record rid.
+	/* Private method that sets the iterator variables using rid.
+	 * Sets the iterator to the first value for the key if prev is
+	 * false or the last value for the key if prev is true.
+	 */
 	void setKey(RecordID rid, bool prev = false) {
 		int recLen;
 		page->ReturnRecord(rid, curKey, recLen);
 
 		int keyLength = strlen(curKey) + 1;
-		//curVal = (ValType*)(curKey + keyLength);
 
 		assert(((recLen - keyLength) % sizeof(ValType)) == 0);
 		numValsWithKey = (recLen - keyLength) / sizeof(ValType);
@@ -171,14 +192,15 @@ private:
 
 	// Initializes the iterator. Should only be called by methods in SortedKVPage.
 	void reset(SortedKVPage<ValType> *page, RecordID rid) {
-		toInit = true;
 		assert(rid.pageNo == page->PageNo());
 		this->page = page;
 		curRid = rid;
 
 		if (page->IsEmpty() || rid.slotNo < 0 || rid.slotNo >= page->GetNumOfRecords()) {
-			curKey = NULL;
+			state = INVALID_SCAN;
 		} else {
+			curDeleted = true;
+			state = MID;
 			setKey(rid);
 		}
 	}

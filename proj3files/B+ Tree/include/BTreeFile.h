@@ -32,7 +32,7 @@ private:
 	PageID GetLeftLeaf();
 
 	Status FreeTree(PageID root_pid);
-	void SplitIndex(IndexPage* newPage, IndexPage* oldPage, const char* newKey, PageID newValue);
+	void SplitIndex(IndexPage* newPage, IndexPage* oldPage, const char* newKey, PageID newValue, char*& newIndexKey, PageID& newIndexValue);
 	void SplitPage(LeafPage* newPage, LeafPage* oldPage, const char* newKey, RecordID newValue);
 
 	//Added variable: filename
