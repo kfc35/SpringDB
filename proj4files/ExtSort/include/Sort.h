@@ -33,6 +33,9 @@ public:
 	~Sort() {}
 
 private:
+	//Used during pass 0
+	Status TransferToHeapFile(char *unsortedMemory, int run, int numElements);
+
 	Status PassZero(int &numTempFiles);
 
 	Status PassOneAndBeyond(int numFiles);
@@ -50,6 +53,8 @@ private:
 	char *_outFile;
 	short *_fieldSizes;
 	int _sortKeyIndex;
+
+
 };
 
 
