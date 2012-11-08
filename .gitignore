@@ -4,7 +4,10 @@
 *.sln
 *.vcxproj
 *.vcxproj.filters
+*.vcxproj.user
 *.suo
 
 proj3files/B+\ Tree/lib
 proj3files/Debug
+
+proj4files/ExtSort/lib
