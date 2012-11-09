@@ -15,6 +15,7 @@ AttrType attributeTypeToCompare;
 int attributeOffset;
 // GLOBAL VARIABLE - the length of the value in the field to compare
 int attributeLength;
+TupleOrder sortOrderG;
 
 
 //-------------------------------------------------------------------
@@ -48,30 +49,43 @@ int compare(const void *a, const void *b)
 	switch(attributeTypeToCompare) {
 		/*Locate the specified attribute within the char arrays and compare. */
 
-		case attrString:
+		case attrString: 
+		{
 			char *aString = new char[attributeLength];
 			char *bString = new char[attributeLength];
 			//copy from where the to-compare attribute starts and finishes
 			memcpy(aString, &(((char *)a)[attributeOffset]), attributeLength);
 			memcpy(bString, &(((char *)b)[attributeOffset]), attributeLength);
 			int result = strcmp(aString, bString);
+			if (sortOrderG == Descending) {
+				result = -result;
+			}
+			
 			delete [] aString;
 			delete [] bString;
 			return result;
+		}
 
 		case attrInteger:
+		{
 			int *aInt = (int *) new char[attributeLength]; //or just new int[1]?
 			int *bInt = (int *) new char[attributeLength]; //attributeLength and Offset are in bytes
 			memcpy((char *)aInt, &(((char *)a)[attributeOffset]), attributeLength);
 			memcpy((char *)bInt, &(((char *)b)[attributeOffset]), attributeLength);
 			int result = *aInt - *bInt;
+			if (sortOrderG == Descending) {
+				result = -result;
+			}
 			delete [] aInt;
 			delete [] bInt;
 			return result;
+		}
 
 		default:
+		{
 			std::cerr << "Attribute type in compare not supported.\n";
 			exit(EXIT_FAILURE);
+		}
 	}
 }
 
@@ -125,7 +139,7 @@ Status Sort::PassZero(int &numTempFiles)
 	}
 
 	int pass = 0;
-	int run = 1;
+	int run = 0;
 	
 	// allocate contiguous space in memory for inserting records into.
 	int numMemory = PAGESIZE * _numBufPages; //in bytes
@@ -135,17 +149,19 @@ Status Sort::PassZero(int &numTempFiles)
 
 	// continually insert all records into runMemory until full.
 	RecordID rid; //just a placeholder.
-	char *recPtr;
+	char *recPtr = new char[_recLength];
 	int recLen;
 
 	while (filescan->GetNext(rid, recPtr, recLen) != DONE){
+		//std::cout << "recLen: " << recLen << std::endl;
 		//check whether runMemory can fit the next record
 		//when its ==, the memory just fits!
-		if ((startIndex + recLen) > numMemory) {
+		if ((startIndex + _recLength) > numMemory) {
 			if (TransferToHeapFile(runMemory, run, numElements) != OK) {
 				delete file;
 				delete filescan;
 				delete [] runMemory;
+				delete [] recPtr;
 				return FAIL;
 			}
 
@@ -156,8 +172,8 @@ Status Sort::PassZero(int &numTempFiles)
 		}
 
 		//copy record into memory
-		memcpy(&runMemory[startIndex], recPtr, recLen);
-		startIndex += recLen;
+		memcpy(&runMemory[startIndex], recPtr, _recLength);
+		startIndex += _recLength;
 		numElements++;
 	}
 
@@ -167,6 +183,7 @@ Status Sort::PassZero(int &numTempFiles)
 			delete file;
 			delete filescan;
 			delete [] runMemory;
+			delete [] recPtr;
 			return FAIL;
 		}
 		//don't increase run number here. No more runs after this
@@ -175,13 +192,113 @@ Status Sort::PassZero(int &numTempFiles)
 	delete file;
 	delete filescan;
 	delete [] runMemory;
+	delete [] recPtr;
 
-	numTempFiles = run; //run kept track of how many temp files we created.
+	numTempFiles = run+1; //run kept track of how many temp files we created.
 
 	return OK;
 }
 
-Status PassOneAndBeyond(int numFiles) {
+Status Sort::MergeManyToOne(unsigned int numPages, Scan **scans, HeapFile *newOut) {
+	unsigned int emptyPages = 0;
+	while (emptyPages < numPages) {
+		RecordID ridMin; //just a placeholder.
+		char *recPtrMin = new char[_recLength];
+		int recLenMin;
+		for (unsigned int i = 0; i < numPages; i++) {
+			RecordID rid;
+			char *recPtr = new char[_recLength];
+			int recLen;
+			if (scans[i] != NULL) {
+				if (recPtrMin == NULL) {
+					// first pointer hasn't been set yet
+					// set first pointer and leave
+					if (scans[i]->GetNext(ridMin, recPtrMin, recLenMin) == DONE) {
+						// scans[i] has reached the end
+						scans[i] = NULL;
+						emptyPages++;
+					}
+				} else {
+					// first pointer has been set, get next and compare
+					if (scans[i]->GetNext(rid, recPtr, recLen) != DONE) {
+						// recPtr has been set, now compare
+						if (compare(recPtrMin, recPtr) > 0) {
+							// recPtr becomes recPtrMin
+							recPtr = recPtrMin;
+						}
+					} else {
+						// scan[i] has reached the end, set it to null
+						scans[i] = NULL;
+						emptyPages++;
+					}
+				}
+			}
+			delete [] recPtr;
+		}
+		// we have the min, add it to newFile
+		if (newOut->InsertRecord(recPtrMin, recLenMin, ridMin) != OK) {
+			std::cerr << "Inserting record failed in pass 1 and beyond" << std::endl;
+			delete [] recPtrMin;
+			return FAIL;
+		}
+		delete [] recPtrMin;
+	}
+	return OK;
+}
+
+Status Sort::PassOneAndBeyond(int numFilesIn, int pass, int &numFilesOut) {
+	Status result;
+	int n = _numBufPages - 1;
+	int numRuns = ceil(numFilesIn*1.0/n);
+	for (int run = 0; run < numRuns; run++) {
+		int numPages = n;
+		if (run == numRuns-1) {
+			// last file
+			numPages = numFilesIn - n*run;
+		}
+		// opening n files and scans
+		Scan **scans = new Scan*[numPages];
+		for (int i = 0; i < numPages; i++) {
+			char* tempFileName = CreateTempFilename(_inFile, pass-1, run*n+i);
+			HeapFile *file = new HeapFile(tempFileName, result);
+			if (result != OK) {
+				delete [] scans;
+				delete [] tempFileName;
+				return FAIL;
+			}
+			Scan* scan = file->OpenScan(result);
+			if (result != OK) {
+				delete [] scans;
+				delete [] tempFileName;
+				delete file;
+				return FAIL;
+			}
+			scans[i] = scan;
+			delete [] tempFileName;
+			delete file;
+		}
+		char* newFileName = CreateTempFilename(_inFile, pass, run);
+		if (numRuns == 1) {
+			newFileName = _outFile;
+		}
+		HeapFile *newOut = new HeapFile(newFileName, result);
+		if (result != OK) {
+			delete [] scans;
+			delete [] newFileName;
+			return FAIL;
+		}
+		if (MergeManyToOne(numPages, scans, newOut) != OK) {
+			delete [] scans;
+			delete [] newFileName;
+			delete newOut;
+			return FAIL;
+		}
+		delete [] scans;
+		delete [] newFileName;
+		delete newOut;
+	}
+	numFilesOut = numRuns;
+
 	return OK;
 }
 
@@ -217,6 +334,7 @@ Sort::Sort(
 		attributeOffset += fieldSizes[i]; 
 	}
 	attributeLength = fieldSizes[_sortKeyIndex];
+	sortOrderG = sortOrder;
 
 	//Do Pass Zero - includes opening the file, reading in records, sorting them into runs.
 	int numTempFiles;
@@ -226,12 +344,16 @@ Sort::Sort(
 		return ;
 	}
 	if (numTempFiles == 0) {
-		s = OK; //the heap file was empty...
-		//TODO create an empty heap file.
-		return ;
+		// create an empty heap file.
+		new HeapFile(_outFile, s);
+		return;
 	}
+	int pass = 1;
 	while (numTempFiles != 1) {
-		//call PassOneAndBeyond repeatedly?
+		if (PassOneAndBeyond(numTempFiles, pass, numTempFiles) != OK) {
+			s = FAIL;
+			return;
+		}
 	}
 }
 

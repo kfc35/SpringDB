@@ -38,9 +38,9 @@ private:
 
 	Status PassZero(int &numTempFiles);
 
-	Status PassOneAndBeyond(int numFiles);
+	Status PassOneAndBeyond(int numFilesIn, int pass, int &numFilesOut);
 
-	Status MergeManyToOne(unsigned int numSourceFiles, HeapFile **source, HeapFile *dest);
+	Status MergeManyToOne(unsigned int numPages, Scan **scans, HeapFile *newOut);
 
 	Status OneMergePass(int numStartFiles, int numPass, int &numEndFiles);
 
