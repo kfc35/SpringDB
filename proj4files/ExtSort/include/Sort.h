@@ -34,7 +34,7 @@ public:
 
 private:
 	//Used during pass 0
-	Status TransferToHeapFile(char *unsortedMemory, int run, int numElements);
+	Status TransferToHeapFile(char *unsortedMemory, int run, int numElements, bool out);
 
 	Status PassZero(int &numTempFiles);
 
