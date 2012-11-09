@@ -95,12 +95,11 @@ int compare(const void *a, const void *b)
 Status Sort::TransferToHeapFile(char *unsortedMemory, int run, int numElements, bool out) {
 	qsort(unsortedMemory, numElements, _recLength, compare);
 	//Insert the contiguous memory into a new heap file.
-	char *tempFile = CreateTempFilename(_inFile, 0, run);
+	char *tempFile = CreateTempFilename(_outFile, 0, run);
 	if (out) {
 		delete [] tempFile;
 		tempFile = _outFile;
 	}
-	std::cout << "tempFile: " << tempFile << std::endl;
 	Status result;
 	HeapFile *temp = new HeapFile(tempFile, result);
 	if (result != OK) {
@@ -165,7 +164,6 @@ Status Sort::PassZero(int &numTempFiles)
 		//check whether runMemory can fit the next record
 		//when its ==, the memory just fits!
 		if ((startIndex + _recLength) > numMemory) {
-			std::cout << "run: " << run << std::endl;
 			if (TransferToHeapFile(runMemory, run, numElements, false) != OK) {
 				delete file;
 				delete filescan;
@@ -224,19 +222,27 @@ Status Sort::MergeManyToOne(unsigned int numPages, Scan **scans, HeapFile *newOu
 		scans[i]->GetNext(rid, recPtr, _recLength);
 		currents[i] = recPtr;
 	}
+	
 	RecordID ridMin; //just a placeholder.
-	char *recPtrMin = currents[0];
+	char *recPtrMin = NULL;
 	while (emptyPages < numPages) {
 		int min_i = 0;
 		for (unsigned int i = 0; i < numPages; i++) {
 			if (currents[i] != NULL) {
-				if (compare(recPtrMin, currents[i]) > 0) {
+				if (recPtrMin == NULL) {
+					// min pointer hasn't been set
 					recPtrMin = currents[i];
-					min_i = i;
+				} else {
+					// min pointer has been set
+					if (compare(recPtrMin, currents[i]) > 0) {
+						recPtrMin = currents[i];
+						min_i = i;
+					}
 				}
 			}
 		}
 		// now has min
+		
 		if (newOut->InsertRecord(recPtrMin, _recLength, ridMin) != OK) {
 			std::cerr << "Inserting record failed in pass 1 and beyond" << std::endl;
 			//delete [] recPtrMin;
@@ -248,6 +254,7 @@ Status Sort::MergeManyToOne(unsigned int numPages, Scan **scans, HeapFile *newOu
 			currents[min_i] = NULL;
 			emptyPages++;
 		}
+		recPtrMin = NULL;
 	}
 	return OK;
 }
@@ -262,12 +269,16 @@ Status Sort::PassOneAndBeyond(int numFilesIn, int pass, int &numFilesOut) {
 			// last file
 			numPages = numFilesIn - n*run;
 		}
-		std::cout << "numPages: " << numPages << std::endl;
+		std::cout << "n: " << n << std::endl <<
+			"numFilesIn: " << numFilesIn << std::endl <<
+			"numRuns: " << numRuns << std::endl <<
+			"run: " << run << std::endl <<
+			"numPages: " << numPages << std::endl;
 		// opening n files and scans
 		Scan **scans = new Scan*[numPages];
 		HeapFile **files = new HeapFile*[numPages];
 		for (int i = 0; i < numPages; i++) {
-			char* tempFileName = CreateTempFilename(_inFile, pass-1, run*n+i);
+			char* tempFileName = CreateTempFilename(_outFile, pass-1, run*n+i);
 			HeapFile *file = new HeapFile(tempFileName, result);
 			if (result != OK) {
 				delete [] scans;
@@ -285,7 +296,7 @@ Status Sort::PassOneAndBeyond(int numFilesIn, int pass, int &numFilesOut) {
 			files[i] = file;
 			delete [] tempFileName;
 		}
-		char* newFileName = CreateTempFilename(_inFile, pass, run);
+		char* newFileName = CreateTempFilename(_outFile, pass, run);
 		if (numRuns == 1) {
 			delete [] newFileName;
 			newFileName = _outFile;
@@ -363,6 +374,7 @@ Sort::Sort(
 	//Do Pass Zero - includes opening the file, reading in records, sorting them into runs.
 	int numTempFiles;
 	Status passZeroStatus = PassZero(numTempFiles);
+	std::cout << "num files after pass 0:" << numTempFiles << std::endl;
 	if (passZeroStatus == FAIL) {
 		s = FAIL;
 		return ;
