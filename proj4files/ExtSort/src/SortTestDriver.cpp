@@ -50,7 +50,7 @@ bool SortTestDriver::TestAll()
 	succeed = TestSortOnly();
 	succeed = TestOneMerge();
 	succeed = TestMulMerge();
-	succeed = TestRandInt();
+	//succeed = TestRandInt();
 
 	return succeed;
 }
@@ -539,7 +539,7 @@ bool SortTestDriver::TestRandInt()
 		int key = atoi(rec.key);
 
 		if (key != sorted[count]) {
-			cout << "Test RandInt Failed: output file is not sorted" << endl;
+			cout << "Test RandInt Failed: output file is not sorted." << endl;
 			succeed = false;
 		}
 

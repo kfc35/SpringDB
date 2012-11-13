@@ -68,11 +68,11 @@ int compare(const void *a, const void *b)
 
 		case attrInteger:
 		{
-			int *aInt = (int *) new char[attributeLength]; //or just new int[1]?
-			int *bInt = (int *) new char[attributeLength]; //attributeLength and Offset are in bytes
-			memcpy((char *)aInt, &(((char *)a)[attributeOffset]), attributeLength);
-			memcpy((char *)bInt, &(((char *)b)[attributeOffset]), attributeLength);
-			int result = *aInt - *bInt;
+			char *aInt = new char[attributeLength]; //or just new int[1]?
+			char *bInt = new char[attributeLength]; //attributeLength and Offset are in bytes
+			memcpy(aInt, &(((char *)a)[attributeOffset]), attributeLength);
+			memcpy(bInt, &(((char *)b)[attributeOffset]), attributeLength);
+			int result = (atoi(aInt)) - (atoi(bInt));
 			if (sortOrderG == Descending) {
 				result = -result;
 			}
@@ -216,15 +216,16 @@ Status Sort::PassZero(int &numTempFiles)
 Status Sort::MergeManyToOne(unsigned int numPages, Scan **scans, HeapFile *newOut) {
 	unsigned int emptyPages = 0;
 	RecordID rid;
-	char *recPtr = new char[_recLength];
 	char** currents = new char*[numPages];
 	for (int i = 0; i < numPages; i++) {
+		char *recPtr = new char[_recLength];
 		scans[i]->GetNext(rid, recPtr, _recLength);
 		currents[i] = recPtr;
 	}
 	
 	RecordID ridMin; //just a placeholder.
 	char *recPtrMin = NULL;
+	//std::cout << currents[0] << ", " << currents[1] << ", " << currents[2] << "\n";
 	while (emptyPages < numPages) {
 		int min_i = 0;
 		for (unsigned int i = 0; i < numPages; i++) {
@@ -232,6 +233,7 @@ Status Sort::MergeManyToOne(unsigned int numPages, Scan **scans, HeapFile *newOu
 				if (recPtrMin == NULL) {
 					// min pointer hasn't been set
 					recPtrMin = currents[i];
+					min_i = i;
 				} else {
 					// min pointer has been set
 					if (compare(recPtrMin, currents[i]) > 0) {
@@ -248,12 +250,15 @@ Status Sort::MergeManyToOne(unsigned int numPages, Scan **scans, HeapFile *newOu
 			//delete [] recPtrMin;
 			return FAIL;
 		}
-		if (scans[min_i]->GetNext(rid, recPtr, _recLength) != DONE) {
-			currents[min_i] = recPtr;
+		char *recNewPtr = new char[_recLength];
+		if (scans[min_i]->GetNext(rid, recNewPtr, _recLength) != DONE) {
+			currents[min_i] = recNewPtr;
 		} else {
+			delete [] recNewPtr;
 			currents[min_i] = NULL;
 			emptyPages++;
 		}
+		delete [] recPtrMin;
 		recPtrMin = NULL;
 	}
 	return OK;
@@ -269,11 +274,11 @@ Status Sort::PassOneAndBeyond(int numFilesIn, int pass, int &numFilesOut) {
 			// last file
 			numPages = numFilesIn - n*run;
 		}
-		std::cout << "n: " << n << std::endl <<
-			"numFilesIn: " << numFilesIn << std::endl <<
-			"numRuns: " << numRuns << std::endl <<
-			"run: " << run << std::endl <<
-			"numPages: " << numPages << std::endl;
+		//std::cout << "n: " << n << std::endl <<
+			//"numFilesIn: " << numFilesIn << std::endl <<
+			//"numRuns: " << numRuns << std::endl <<
+			//"run: " << run << std::endl <<
+			//"numPages: " << numPages << std::endl;
 		// opening n files and scans
 		Scan **scans = new Scan*[numPages];
 		HeapFile **files = new HeapFile*[numPages];
@@ -374,7 +379,7 @@ Sort::Sort(
 	//Do Pass Zero - includes opening the file, reading in records, sorting them into runs.
 	int numTempFiles;
 	Status passZeroStatus = PassZero(numTempFiles);
-	std::cout << "num files after pass 0:" << numTempFiles << std::endl;
+	//std::cout << "num files after pass 0:" << numTempFiles << std::endl;
 	if (passZeroStatus == FAIL) {
 		s = FAIL;
 		return ;
@@ -390,6 +395,7 @@ Sort::Sort(
 			s = FAIL;
 			return;
 		}
+		pass++;
 	}
 	s = OK;
 }
