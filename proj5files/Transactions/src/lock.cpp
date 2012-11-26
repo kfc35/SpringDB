@@ -5,6 +5,7 @@ ReadWriteFIFOLock::ReadWriteFIFOLock(int oid)
 	_m = gcnew Object();
 	sharedLockCount = 0;
 	exclusiveLockCount = 0;
+	wakeUpListStatus = EMPTY;
 	wakeUpList = gcnew List<int>();
 	lockingList = gcnew List<int>();
 	waitQ = gcnew LinkedList<Request^>();
@@ -17,7 +18,7 @@ bool ReadWriteFIFOLock::AcquireSharedLock(int pid)
 {
 	Monitor::Enter(_m);
 
-	if ((waitQ->Count > 0) || (exclusiveLockCount != 0))
+	if ((waitQ->Count > 0) || (exclusiveLockCount != 0) || wakeUpListStatus == XLIST)
 	{
 		Request^ r = gcnew Request(pid, SHARED);
 		waitQ->AddLast(r);
@@ -29,6 +30,9 @@ bool ReadWriteFIFOLock::AcquireSharedLock(int pid)
 			if (wakeUpList->Contains(pid))
 			{
 				wakeUpList->Remove(pid);
+				if (wakeUpList->Count == 0) {
+					wakeUpListStatus = EMPTY;
+				}
 				break;
 			}
 		}
@@ -50,6 +54,10 @@ bool ReadWriteFIFOLock::AcquireSharedLock(int pid)
 		while (wakeUpList->Contains(pid)) {
 			wakeUpList->Remove(pid);
 		}
+		
+		if (wakeUpList->Count == 0) {
+			wakeUpListStatus = EMPTY;
+		}
 
 		if (PRINTLOG) {
 			Console::WriteLine("p" + pid + " FAIL to get shared lock for " + objectID);
@@ -66,7 +74,7 @@ bool ReadWriteFIFOLock::AcquireSharedLock(int pid)
 			if (objectID == -1) {
 				Console::WriteLine("p" + pid + " get shared index lock");
 			} else {
-				Console::WriteLine("p" + pid + " Acquire shared lock for " + objectID);
+				Console::WriteLine("p" + pid + " get shared lock for " + objectID);
 			}
 
 		Monitor::Exit(_m);
@@ -81,9 +89,9 @@ void ReadWriteFIFOLock::ReleaseSharedLock(int pid)
 	lockingList->Remove(pid);
 	sharedLockCount--;
 
-	if ((sharedLockCount == 0) && (waitQ->Count > 0) && (wakeUpList->Count == 0))
+	if ((sharedLockCount == 0) && (waitQ->Count > 0) && (wakeUpListStatus == EMPTY))
 	{
-		//Release an exclusive lock
+		//release an exclusive lock
 		Request^ t = waitQ->First->Value;
 		waitQ->RemoveFirst();
 
@@ -97,10 +105,11 @@ void ReadWriteFIFOLock::ReleaseSharedLock(int pid)
 			Console::WriteLine("Wake up list is not empty when releasing the last shared lock");
 		}
 
+		wakeUpListStatus = XLIST;
 		wakeUpList->Add(t->pid);
 		Monitor::PulseAll(_m);
 	}
-	else if ((sharedLockCount == 1) && (waitQ->Count > 0))
+	else if ((sharedLockCount == 1) && (waitQ->Count > 0) && (wakeUpListStatus == EMPTY))
 	{
 		Request^ r = waitQ->First->Value;
 
@@ -108,6 +117,7 @@ void ReadWriteFIFOLock::ReleaseSharedLock(int pid)
 		{
 			//ready to upgrade, return to AcquireExclusiveLock function
 			waitQ->RemoveFirst();
+			wakeUpListStatus = XLIST;
 			wakeUpList->Add(r->pid);
 			Monitor::PulseAll(_m);
 		}
@@ -115,9 +125,9 @@ void ReadWriteFIFOLock::ReleaseSharedLock(int pid)
 
 	if (PRINTLOG)
 		if (objectID == -1) {
-			Console::WriteLine("p" + pid +" Release shared index lock");
+			Console::WriteLine("p" + pid +" release shared index lock");
 		} else {
-			Console::WriteLine("p" + pid +" Release shared lock for " + objectID);
+			Console::WriteLine("p" + pid +" release shared lock for " + objectID);
 		}
 
 	Monitor::Exit(_m);
@@ -128,7 +138,7 @@ bool ReadWriteFIFOLock::AcquireExclusiveLock(int pid)
 	Monitor::Enter(_m);
 
 	//directly upgradeable?
-	if ((sharedLockCount == 1))
+	if ((sharedLockCount == 1) && (wakeUpListStatus == EMPTY))
 	{
 		if (lockingList[0] == pid)
 		{
@@ -136,7 +146,7 @@ bool ReadWriteFIFOLock::AcquireExclusiveLock(int pid)
 			exclusiveLockCount++;
 
 			if (PRINTLOG) {
-				Console::WriteLine("p" + pid +" Acquire exclusive lock for " + objectID);
+				Console::WriteLine("p" + pid +" get exclusive lock for " + objectID);
 			}
 
 			Monitor::Exit(_m);
@@ -144,7 +154,7 @@ bool ReadWriteFIFOLock::AcquireExclusiveLock(int pid)
 		}
 	}
 
-	if ((waitQ->Count > 0) || (exclusiveLockCount != 0) || (sharedLockCount !=0))
+	if ((waitQ->Count > 0) || (exclusiveLockCount != 0) || (sharedLockCount !=0) || (wakeUpListStatus != EMPTY))
 	{
 		Request^ r = gcnew Request(pid, EXCLUSIVE);
 
@@ -164,6 +174,7 @@ bool ReadWriteFIFOLock::AcquireExclusiveLock(int pid)
 
 			if (wakeUpList->Contains(pid))
 			{
+				wakeUpListStatus = EMPTY;
 				wakeUpList->Remove(pid);
 				break;
 			}
@@ -187,8 +198,12 @@ bool ReadWriteFIFOLock::AcquireExclusiveLock(int pid)
 			wakeUpList->Remove(pid);
 		}
 
+		if (wakeUpList->Count == 0) {
+			wakeUpListStatus = EMPTY;	
+		}
+
 		if (PRINTLOG) {
-			Console::WriteLine("p" + pid + " FAIL to Acquire exclusive lock for " + objectID);
+			Console::WriteLine("p" + pid + " FAIL to get exclusive lock for " + objectID);
 		}
 
 		Monitor::Exit(_m);
@@ -209,9 +224,9 @@ bool ReadWriteFIFOLock::AcquireExclusiveLock(int pid)
 
 		if (PRINTLOG)
 			if (objectID == -1) {
-				Console::WriteLine("p" + pid + " Acquire exclusive index lock");
+				Console::WriteLine("p" + pid + " get exclusive index lock");
 			} else {
-				Console::WriteLine("p" + pid + " Acquire exclusive lock for " + objectID);
+				Console::WriteLine("p" + pid + " get exclusive lock for " + objectID);
 			}
 
 		Monitor::Exit(_m);
@@ -226,17 +241,13 @@ void ReadWriteFIFOLock::ReleaseExclusiveLock(int pid)
 	lockingList->Remove(pid);
 	exclusiveLockCount--;
 
-	if ((waitQ->Count > 0) && (wakeUpList->Count == 0))
+	if ((waitQ->Count > 0) && (wakeUpListStatus == EMPTY))
 	{
-		if (wakeUpList->Count != 0)
-		{
-			Console::WriteLine("Wake up list is not empty when releasing the last exclusive lock");
-		}
-
 		Request^ t = waitQ->First->Value;
 
 		if (t->type == EXCLUSIVE)
 		{
+			wakeUpListStatus = XLIST;
 			wakeUpList->Add(t->pid);
 			waitQ->RemoveFirst();
 		}
@@ -244,6 +255,7 @@ void ReadWriteFIFOLock::ReleaseExclusiveLock(int pid)
 		{
 			while (t->type == SHARED)
 			{
+				wakeUpListStatus = SLIST;
 				wakeUpList->Add(t->pid);
 				waitQ->RemoveFirst();
 
@@ -260,9 +272,9 @@ void ReadWriteFIFOLock::ReleaseExclusiveLock(int pid)
 
 	if (PRINTLOG)
 		if (objectID == -1) {
-			Console::WriteLine("p" + pid +" Release exclusive index lock");
+			Console::WriteLine("p" + pid +" release exclusive index lock");
 		} else {
-			Console::WriteLine("p" + pid +" Release exclusive lock for " + objectID);
+			Console::WriteLine("p" + pid +" release exclusive lock for " + objectID);
 		}
 
 	Monitor::Exit(_m);

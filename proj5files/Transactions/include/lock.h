@@ -9,6 +9,12 @@ using namespace System::Collections::Generic;
 
 #define PRINTLOG 0 //1 FOR DEBUG
 
+enum WakeUpListStatus {
+	EMPTY,
+	SLIST,
+	XLIST
+};
+
 public ref class Request {
 public:
 	int pid;
@@ -39,6 +45,9 @@ public:
 	void ReleaseSharedLock(int pid);
 	bool AcquireExclusiveLock(int pid);
 	void ReleaseExclusiveLock(int pid);
+
+private:
+	WakeUpListStatus wakeUpListStatus;
 };
 
 public ref class LockManager {
