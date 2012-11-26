@@ -36,7 +36,7 @@ public:
 	vector<KVP> writeList;
 
 	// A list of all locks and the lock type currently held by the transaciton.
-	vector< pair <int ,bool > > LockList;
+	vector< pair <int, bool> > LockList;
 
 	// Sets transaction status to NEW.
 	Transaction();
