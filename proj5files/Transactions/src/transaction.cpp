@@ -27,7 +27,7 @@ Status Transaction::AbortTransaction()
 //--------------------------------------------------------------------
 void Transaction::InsertLock(int oid, bool shared) {
 	// TODO : Add your code here.
-	LockList.insert(LockList.end(), make_pair(oid, shared));
+	LockList.push_back(make_pair(oid, shared));
 }
 
 //--------------------------------------------------------------------
@@ -38,6 +38,14 @@ void Transaction::InsertLock(int oid, bool shared) {
 //--------------------------------------------------------------------
 void Transaction::ReleaseAllLocks() {
 	// TODO : Add your code here.
+	for (int i = 0; i < LockList.size(); i++) {
+		pair<int, bool> lockPair = LockList[i];
+		if (lockPair.second == SHARED) { // share lock
+			LockManager::ReleaseSharedLock(this->tid, lockPair.first);
+		} else { // exclusive lock
+			LockManager::ReleaseExclusiveLock(this->tid, lockPair.first);
+		}
+	}
 	LockList.clear();
 }
 
@@ -62,7 +70,6 @@ Status Transaction::Read(KeyType key, DataType &value) {
 	InsertLock(key, SHARED);
 
 	if (TSHI->GetValue(key, value) != OK) {
-		LockManager::ReleaseSharedLock(this->tid, key);
 		ReleaseAllLocks();
 		this->status = ABORTED;
 		return FAIL;
@@ -86,8 +93,17 @@ Status Transaction::AddWritePair(KeyType key, DataType value, OpType op) {
 	pair.key = key;
 	pair.value = value;
 	pair.op = op;
-	writeList.insert(writeList.end(), pair);
+	vector<KVP>::iterator position = FindInsertionPosition(key);
+	writeList.insert(position, pair);
 	return OK;
+}
+
+vector<KVP>::iterator Transaction::FindInsertionPosition(KeyType key) {
+	vector<KVP>::iterator iter = writeList.begin();
+	while (iter != writeList.end() || iter->key < key) {
+		iter++;
+	}
+	return iter;
 }
 
 //--------------------------------------------------------------------
@@ -96,7 +112,7 @@ Status Transaction::AddWritePair(KeyType key, DataType value, OpType op) {
 // Input    : None. (it uses the writeList)
 // Output   : None
 // Purpose  : Performs all operations in writeList after acquiring 
-//			  appropriate locks. Abort transaction and FAIL is locking
+//			  appropriate locks. Abort transaction and FAIL if locking
 //            FAILS. NOTE : Order the lock-acquisition properly to avoid
 //            deadlocks. If all transactions follow the same order, then 
 //            there can be no deadlock unless due to lock upgrades (think why).

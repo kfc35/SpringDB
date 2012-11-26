@@ -117,7 +117,7 @@ private:
 	// Input    : None
 	// Purpose  : Release all locks Acquired by the current transaction.
 	//--------------------------------------------------------------------
-	void	ReleaseAllLocks();
+	void ReleaseAllLocks();
 
 	//--------------------------------------------------------------------
 	// Transaction::InsertLock
@@ -128,6 +128,8 @@ private:
 	// Return   : OK. Should never return FAIL.
 	//--------------------------------------------------------------------
 	void InsertLock(int oid, bool isShared);
+
+	vector<KVP>::iterator FindInsertionPosition(KeyType key);
 };
 
 public ref class TranscationExecution
