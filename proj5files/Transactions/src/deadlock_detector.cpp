@@ -70,7 +70,7 @@ void DeadlockDetector::AbortTransactions()
 		}
 
 	if (!deadlock) {
-		Console::WriteLine("no deadlock found");
+		//Console::WriteLine("no deadlock found");
 	}
 	else {
 		for (int i = 0; i < maxT; ++i)
