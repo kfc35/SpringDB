@@ -21,18 +21,32 @@ void DeadlockDetector::BuildWaitForGraph()
 
 		//BEGIN OF TODO
 
+		//Data structure to store all the requests that wants an exclusive lock
+		LinkedList<int>^ exclusiveList = gcnew LinkedList<int>();
+
 		//TRAVERSAL waitQ
 		for each (Request^ req in lock->waitQ)
 		{
-			req->pid;
-			req->type;
+			//if the type is for exclusive, add it do the data structure
+			if (req->type == EXCLUSIVE) {
+				exclusiveList->AddFirst(req->pid);
+			}
+			else {
+				break; //you can break out since exclusives are purely at the front
+			}
 		}
 
 		//TRAVERSAL lockingList
 		for each (int pid in lock->lockingList)
 		{
+			//for each request that wants an exclusive lock
+				//set waitsFor[request][pid] = true
+			for each (int exid in exclusiveList) {
+				waitFor[exid][pid] = true;
+			}
 		}
 
+		/*
 		if (lock->waitQ->Count > 0)
 		{
 			//FIRST ELEMENT OF waitQ
@@ -44,6 +58,7 @@ void DeadlockDetector::BuildWaitForGraph()
 				Request^ r = lock->waitQ->First->Next->Value;
 			}
 		}
+		*/
 
 		//END OF TODO
 
@@ -54,6 +69,35 @@ void DeadlockDetector::BuildWaitForGraph()
 void DeadlockDetector::AnalyzeWaitForGraph()
 {
 	// TODO : Add your code here.
+
+	bool seenT[maxT]; //keep track of the transactions we have traversed total
+	for (int i = 0; i < maxT; i++) {
+		seenT[i] = false;
+	}
+
+	//stack for breadth/depth first search
+	LinkedList<int>^ traverseList = gcnew LinkedList<int>();
+
+	for (int i = 0; i < maxT; i++) {
+		if (abortT[i] || seenT[i]) {
+			continue; //don't need to analyze if the transactions already aborted
+			//or seen in a prior traversal of a transaction
+		}
+		// add this transaction to the /stack
+		traverseList->AddFirst(i);
+
+		// while the queue/stack is not empty
+		while (!traverseList.empty()) {
+			// pop something off the queue/stack, set seenT of it to true
+			int currentT = traverseList->First();
+			traverseList->RemoveFirst(i);
+			seenT[currentT] = true;
+			
+			// try to find a cycle -- cycle detected if you bump into transaction that's already seen that HASNT been aborted yet
+			// remove the appropriate transaction with the least pid or whatever you think should happen... set abortT for it to true
+			// for now, we will just abort the "already seen" transaction
+		}
+	}
 }
 
 
@@ -116,6 +160,15 @@ void DeadlockDetector::run()
 		//BEGIN OF TODO
 		memset(waitFor, 0 ,sizeof(waitFor));
 		//INITIALIZE ANY OTHER DATA STRUCTURES YOU DECLARE.
+
+		//Clear all entries in the abort and wait for arrays
+		for (int i = 0; i < maxT; i++) {
+			abortT[i] = false;
+			for (int j = 0; j < maxT; j++) {
+				waitFor[i][j] = false;
+			}
+		}
+
 		//END OF TODO
 
 		memset(abortT, 0 ,sizeof(abortT));
