@@ -71,16 +71,13 @@ void Transaction::ReleaseAllLocks() {
 Status Transaction::Read(KeyType key, DataType &value) {
 	if (!LockManager::AcquireSharedLock(this->tid, key)) {
 		// acquiring lock failed
-		ReleaseAllLocks();
-		this->status = ABORTED;
+		AbortTransaction();
 		return FAIL;
 	}
 
 	InsertLock(key, SHARED);
 
 	if (TSHI->GetValue(key, value) != OK) {
-		ReleaseAllLocks();
-		this->status = ABORTED;
 		return FAIL;
 	}
 
@@ -139,8 +136,7 @@ Status Transaction::GroupWrite() {
 	for (int i = 0; i < writeList.size(); i++) {
 		KVP kvPair = writeList[i];
 		if (!LockManager::AcquireExclusiveLock(this->tid, kvPair.key)) {
-			ReleaseAllLocks();
-			this->status = ABORTED;
+			AbortTransaction();
 			return FAIL;
 		}
 
@@ -153,31 +149,22 @@ Status Transaction::GroupWrite() {
 		switch (kvPair.op) {
 		case INSERT:
 			if (TSHI->InsertKeyValue(kvPair.key, kvPair.value) != OK) {
-				ReleaseAllLocks();
-				this->status = ABORTED;
 				return FAIL;
 			}
 			break;
 		case UPDATE:
 			if (TSHI->UpdateValue(kvPair.key, kvPair.value) != OK) {
-				ReleaseAllLocks();
-				this->status = ABORTED;
 				return FAIL;
 			}
 			break;
 		case DELETE:
-			if (TSHI->DeleteKey(kvPair.key) != OK) {
-				ReleaseAllLocks();
-				this->status = ABORTED;
-				return FAIL;
-			}
+			TSHI->DeleteKey(kvPair.key);
 			break;
 		default:
 			return FAIL;
 		}
 	}
 
-	ReleaseAllLocks();
 	this->status = GROUPWRITE;
 	return OK;
 }

@@ -87,7 +87,7 @@ void DeadlockDetector::AnalyzeWaitForGraph()
 		traverseList->AddFirst(i);
 
 		// while the queue/stack is not empty
-		while (!traverseList.empty()) {
+		while (traverseList->Count != 0) {
 			// pop something off the queue/stack, set seenT of it to true
 			int currentT = traverseList->First();
 			traverseList->RemoveFirst(i);
