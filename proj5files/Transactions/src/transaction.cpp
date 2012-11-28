@@ -131,14 +131,9 @@ Status Transaction::GroupWrite() {
 	// TODO : Add your code here.
 
 	// piazza says to fail if calling GroupWrite with empty writeList
-	// but we can't pass test1 with this block of code because it calls
-	// GroupWrite with empty writeList
-
-	//if (writeList.size() == 0) {
-	//	ReleaseAllLocks();
-	//	this->status = ABORTED;
-	//	return FAIL;
-	//}
+	if (writeList.size() == 0) {
+		return FAIL;
+	}
 
 	// acquiring locks
 	for (int i = 0; i < writeList.size(); i++) {
