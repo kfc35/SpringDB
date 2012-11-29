@@ -21,30 +21,23 @@ void DeadlockDetector::BuildWaitForGraph()
 
 		//BEGIN OF TODO
 
-		//Data structure to store all the requests that wants an exclusive lock
-		LinkedList<int>^ exclusiveList = gcnew LinkedList<int>();
-
 		//TRAVERSAL waitQ
 		for each (Request^ req in lock->waitQ)
 		{
-			//if the type is for exclusive, add it do the data structure
-			if (req->type == EXCLUSIVE) {
-				exclusiveList->AddFirst(req->pid);
-			}
-			else {
-				break; //you can break out since exclusives are purely at the front
+			//TRAVERSAL lockingList
+			for each (int pid in lock->lockingList)
+			{
+				//the request on the waitQ is waiting for every lock on the lockingList
+				//this includes exclusive reqs at the front of the queue, and the shared request(s) after
+				if ((req->pid) != pid) {
+					//Console::WriteLine("In BuildWaitFor: " + req->pid + " is waiting for " + pid);
+					waitFor[req->pid][pid] = true;
+				}
 			}
 		}
 
-		//TRAVERSAL lockingList
-		for each (int pid in lock->lockingList)
-		{
-			//for each request that wants an exclusive lock
-				//set waitsFor[request][pid] = true
-			for each (int exid in exclusiveList) {
-				waitFor[exid][pid] = true;
-			}
-		}
+		
+		
 
 		/*
 		if (lock->waitQ->Count > 0)
@@ -81,7 +74,7 @@ void DeadlockDetector::AnalyzeWaitForGraph()
 	for (int i = 0; i < maxT; i++) {
 		if (abortT[i] || seenT[i]) {
 			continue; //don't need to analyze if the transactions already aborted
-			//or seen in a prior traversal of a transaction
+			//or seen in a prior traversal of a connected component
 		}
 		// add this transaction to the /stack
 		traverseList->AddFirst(i);
@@ -89,13 +82,27 @@ void DeadlockDetector::AnalyzeWaitForGraph()
 		// while the queue/stack is not empty
 		while (traverseList->Count != 0) {
 			// pop something off the queue/stack, set seenT of it to true
-			int currentT = traverseList->First();
-			traverseList->RemoveFirst(i);
+			int currentT = traverseList->First->Value;
+			traverseList->RemoveFirst();
+			// try to find a cycle -- cycle detected if you bump into transaction that's already seen
+			if (seenT[currentT] && !abortT[currentT]) {
+				//simple abort protocol -- just delete the immediate one we found in the cycle
+				abortT[currentT] = true;
+				continue;
+			}
+			else if (seenT[currentT]) { //transaction was already aborted
+				//continue - don't need to add adjacent edges for this aborted transaction
+				continue;
+			}
 			seenT[currentT] = true;
-			
-			// try to find a cycle -- cycle detected if you bump into transaction that's already seen that HASNT been aborted yet
-			// remove the appropriate transaction with the least pid or whatever you think should happen... set abortT for it to true
-			// for now, we will just abort the "already seen" transaction
+
+			// Push all neighbors to the front of the stack
+			for (int j = 0; j < maxT; j++) {
+				if (waitFor[currentT][j]) {
+					//Console::WriteLine("In AnalyzeWaitFor: " + currentT + " is waiting for " + j);
+					traverseList->AddFirst(j);
+				}
+			}
 		}
 	}
 }

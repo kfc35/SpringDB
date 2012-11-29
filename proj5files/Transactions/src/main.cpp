@@ -31,10 +31,10 @@ int main()
 	oThreadd->Start();
 
 	// IMP : TEST CASES MUST BE RUN SEPARATELY ONE AT A TIME.
-	test1(HI);
+	//test1(HI);
 	//test2(HI);
 	//test3(HI);
-	//test4(HI);
+	test4(HI);
 
 	Console::ReadLine();
 	return 0;
