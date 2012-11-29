@@ -20,6 +20,8 @@ bool ReadWriteFIFOLock::AcquireSharedLock(int pid)
 
 	if ((waitQ->Count > 0) || (exclusiveLockCount != 0) || wakeUpListStatus == XLIST)
 	{
+		Console::WriteLine("waitQ count: " + waitQ->Count + " exclusiveLockCount: " + exclusiveLockCount);
+		Console::WriteLine("waitQ1: " + waitQ->First->Value->pid + " waitQ2: " + waitQ->First->Next->Value->pid);
 		Request^ r = gcnew Request(pid, SHARED);
 		waitQ->AddLast(r);
 
@@ -37,6 +39,7 @@ bool ReadWriteFIFOLock::AcquireSharedLock(int pid)
 			}
 		}
 	}
+
 
 	if (abortList->Contains(pid)) {
 
@@ -97,7 +100,7 @@ void ReadWriteFIFOLock::ReleaseSharedLock(int pid)
 
 		if (t->type == SHARED)
 		{
-			Console::WriteLine("Unexpected shared lock request by" + t->pid);
+			Console::WriteLine("Unexpected shared lock request by " + t->pid + " for " + objectID + " (" + pid + ")");
 		}
 
 		if (wakeUpList->Count != 0)
