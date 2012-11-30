@@ -148,11 +148,13 @@ Status Transaction::GroupWrite() {
 		KVP kvPair = writeList[i];
 		switch (kvPair.op) {
 		case INSERT:
+			//TSHI->InsertKeyValue(kvPair.key, kvPair.value);
 			if (TSHI->InsertKeyValue(kvPair.key, kvPair.value) != OK) {
 				return FAIL;
 			}
 			break;
 		case UPDATE:
+			//TSHI->UpdateValue(kvPair.key, kvPair.value);
 			if (TSHI->UpdateValue(kvPair.key, kvPair.value) != OK) {
 				return FAIL;
 			}

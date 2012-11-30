@@ -24,15 +24,24 @@ void DeadlockDetector::BuildWaitForGraph()
 		//TRAVERSAL waitQ
 		for each (Request^ req in lock->waitQ)
 		{
+			//if (lock->objectID == 1) {
+				//Console::WriteLine("req " + req->pid + " is waiting for lock " + lock->objectID);
+			//}
 			//TRAVERSAL lockingList
 			for each (int pid in lock->lockingList)
 			{
+				//if (lock->objectID == 1) {
+					//Console::WriteLine("req " + pid + " is has a lock for " + lock->objectID);
+				//}
 				//the request on the waitQ is waiting for every lock on the lockingList
 				//this includes exclusive reqs at the front of the queue, and the shared request(s) after
 				if ((req->pid) != pid) {
 					//Console::WriteLine("In BuildWaitFor: " + req->pid + " is waiting for " + pid);
 					waitFor[req->pid][pid] = true;
 				}
+				//else {
+					//Console::WriteLine("In BuildWaitFor Equalpid: " + req->pid + " is waiting for " + pid);
+				//}
 			}
 		}
 
@@ -63,18 +72,22 @@ void DeadlockDetector::AnalyzeWaitForGraph()
 {
 	// TODO : Add your code here.
 
-	bool seenT[maxT]; //keep track of the transactions we have traversed total
+	bool seenLocalT[maxT]; //keep track of the transactions we have traversed from this currentT
+	bool seenGlobalT[maxT]; //keep track of the transactions we have traversed total
 	for (int i = 0; i < maxT; i++) {
-		seenT[i] = false;
+		seenGlobalT[i] = false;
 	}
 
 	//stack for breadth/depth first search
 	LinkedList<int>^ traverseList = gcnew LinkedList<int>();
 
 	for (int i = 0; i < maxT; i++) {
-		if (abortT[i] || seenT[i]) {
+		if (abortT[i] || seenGlobalT[i]) {
 			continue; //don't need to analyze if the transactions already aborted
-			//or seen in a prior traversal of a connected component
+			//or seen in a prior traversal of a component
+		}
+		for (int j = 0; j < maxT; j++) {
+			seenLocalT[j] = false; //reset the currentT's seen transactions -> it's a new iteration
 		}
 		// add this transaction to the /stack
 		traverseList->AddFirst(i);
@@ -82,29 +95,43 @@ void DeadlockDetector::AnalyzeWaitForGraph()
 		// while the queue/stack is not empty
 		while (traverseList->Count != 0) {
 			// pop something off the queue/stack, set seenT of it to true
+
 			int currentT = traverseList->First->Value;
 			traverseList->RemoveFirst();
 			// try to find a cycle -- cycle detected if you bump into transaction that's already seen
-			if (seenT[currentT] && !abortT[currentT]) {
+			if (seenLocalT[currentT] && !abortT[currentT]) {
 				//simple abort protocol -- just delete the immediate one we found in the cycle
+				//Console::WriteLine("Aborting " + currentT);
 				abortT[currentT] = true;
+				while (traverseList->Remove(currentT)) {
+					//remove until it's all gone
+				}
 				continue;
 			}
-			else if (seenT[currentT]) { //transaction was already aborted
+			else if (seenLocalT[currentT]) { //transaction was already aborted
 				//continue - don't need to add adjacent edges for this aborted transaction
 				continue;
 			}
-			seenT[currentT] = true;
+			seenLocalT[currentT] = true;
 
 			// Push all neighbors to the front of the stack
 			for (int j = 0; j < maxT; j++) {
-				if (waitFor[currentT][j]) {
+				//don't need to connect wait if it's been aborted already or
+				//already cleared of deadlocks globally
+				if (waitFor[currentT][j] && !abortT[j] && !seenGlobalT[j]) {
 					//Console::WriteLine("In AnalyzeWaitFor: " + currentT + " is waiting for " + j);
 					traverseList->AddFirst(j);
 				}
 			}
 		}
+		//Update globally seen nodes
+		for (int j = 0; j < maxT; j++) {
+			if (seenLocalT[j]) { 
+				seenGlobalT[j] = true;
+			}
+		}
 	}
+	//Console::WriteLine("-----");
 }
 
 
@@ -121,7 +148,7 @@ void DeadlockDetector::AbortTransactions()
 		}
 
 	if (!deadlock) {
-		//Console::WriteLine("no deadlock found");
+		Console::WriteLine("no deadlock found");
 	}
 	else {
 		for (int i = 0; i < maxT; ++i)

@@ -20,8 +20,9 @@ bool ReadWriteFIFOLock::AcquireSharedLock(int pid)
 
 	if ((waitQ->Count > 0) || (exclusiveLockCount != 0) || wakeUpListStatus == XLIST)
 	{
-		Console::WriteLine("waitQ count: " + waitQ->Count + " exclusiveLockCount: " + exclusiveLockCount);
-		Console::WriteLine("waitQ1: " + waitQ->First->Value->pid + " waitQ2: " + waitQ->First->Next->Value->pid);
+		/*Console::WriteLine("waitQ count: " + waitQ->Count + " exclusiveLockCount: " + exclusiveLockCount);
+		Console::WriteLine("waitQ1: " + waitQ->First->Value->pid + " " + (waitQ->First->Value->type == SHARED ? "shared" : "exclusive") + " waitQ2: " + waitQ->First->Next->Value->pid
+			+ " " + (waitQ->First->Next->Value->type == SHARED ? "shared" : "exclusive") );*/
 		Request^ r = gcnew Request(pid, SHARED);
 		waitQ->AddLast(r);
 
@@ -159,6 +160,10 @@ bool ReadWriteFIFOLock::AcquireExclusiveLock(int pid)
 
 	if ((waitQ->Count > 0) || (exclusiveLockCount != 0) || (sharedLockCount !=0) || (wakeUpListStatus != EMPTY))
 	{
+		//if (objectID == 1) {
+			//Console::WriteLine("*Locking list has " + lockingList->Count);
+			//Console::WriteLine(lockingList[0]);
+		//}
 		Request^ r = gcnew Request(pid, EXCLUSIVE);
 
 		if (lockingList->Contains(pid))
